@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Clock, Users, Star, Play } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 interface CourseCardProps {
   id: string;
@@ -17,6 +18,7 @@ interface CourseCardProps {
 }
 
 const CourseCard = ({
+  id,
   title,
   description,
   instructor,
@@ -28,6 +30,7 @@ const CourseCard = ({
   category,
   level,
 }: CourseCardProps) => {
+  const navigate = useNavigate();
   const levelColors = {
     Beginner: "bg-success/10 text-success",
     Intermediate: "bg-warning/10 text-warning",
@@ -103,10 +106,10 @@ const CourseCard = ({
         </div>
         
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" className="flex-1">
+          <Button variant="outline" size="sm" className="flex-1" onClick={() => navigate(`/course/${id}`)}>
             Preview
           </Button>
-          <Button variant="hero" size="sm" className="flex-1">
+          <Button variant="hero" size="sm" className="flex-1" onClick={() => navigate(`/course/${id}`)}>
             Enroll Now
           </Button>
         </div>

@@ -1,8 +1,10 @@
 import { Button } from "@/components/ui/button";
 import { Play, Star } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import heroImage from "@/assets/hero-image.jpg";
 
 const Hero = () => {
+  const navigate = useNavigate();
   return (
     <section className="relative overflow-hidden bg-hero-gradient">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-20 lg:py-32">
@@ -33,7 +35,7 @@ const Hero = () => {
             </p>
             
             <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">
-              <Button variant="hero" size="xl" className="bg-white text-primary hover:bg-white/90">
+              <Button variant="hero" size="xl" className="bg-white text-primary hover:bg-white/90" onClick={() => navigate("/courses")}>
                 <Play className="w-5 h-5 mr-2" />
                 Start Learning
               </Button>
@@ -41,6 +43,7 @@ const Hero = () => {
                 variant="outline" 
                 size="xl" 
                 className="border-white/30 text-white hover:bg-white/10 hover:text-white"
+                onClick={() => navigate("/courses")}
               >
                 Explore Courses
               </Button>

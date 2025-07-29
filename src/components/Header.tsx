@@ -1,27 +1,39 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Search, User, Menu, Play } from "lucide-react";
+import { Search, User, Menu, Play, LogOut } from "lucide-react";
+import { useAuth } from "@/hooks/useAuth";
+import { useNavigate, Link } from "react-router-dom";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 const Header = () => {
+  const { user, signOut } = useAuth();
+  const navigate = useNavigate();
+
+  const handleSignOut = async () => {
+    await signOut();
+    navigate("/");
+  };
   return (
     <header className="sticky top-0 z-50 w-full bg-background/80 backdrop-blur-lg border-b border-border shadow-card">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-hero-gradient rounded-lg flex items-center justify-center">
-              <Play className="w-4 h-4 text-white" />
-            </div>
-            <span className="text-xl font-bold bg-hero-gradient bg-clip-text text-transparent">
-              LearnStream
-            </span>
+            <Link to="/" className="flex items-center gap-2">
+              <div className="w-8 h-8 bg-hero-gradient rounded-lg flex items-center justify-center">
+                <Play className="w-4 h-4 text-white" />
+              </div>
+              <span className="text-xl font-bold bg-hero-gradient bg-clip-text text-transparent">
+                LearnStream
+              </span>
+            </Link>
           </div>
 
           {/* Navigation */}
           <nav className="hidden md:flex items-center gap-8">
-            <a href="#" className="text-foreground hover:text-primary transition-colors font-medium">
+            <Link to="/courses" className="text-foreground hover:text-primary transition-colors font-medium">
               Courses
-            </a>
+            </Link>
             <a href="#" className="text-foreground hover:text-primary transition-colors font-medium">
               Categories
             </a>
@@ -47,12 +59,32 @@ const Header = () => {
             <Button variant="ghost" size="icon" className="lg:hidden">
               <Search className="w-4 h-4" />
             </Button>
-            <Button variant="outline" className="hidden sm:flex">
-              Sign In
-            </Button>
-            <Button variant="hero" className="hidden sm:flex">
-              Get Started
-            </Button>
+            
+            {user ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon">
+                    <User className="w-4 h-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={handleSignOut}>
+                    <LogOut className="h-4 w-4 mr-2" />
+                    Sign Out
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : (
+              <>
+                <Button variant="outline" className="hidden sm:flex" onClick={() => navigate("/auth")}>
+                  Sign In
+                </Button>
+                <Button variant="hero" className="hidden sm:flex" onClick={() => navigate("/auth")}>
+                  Get Started
+                </Button>
+              </>
+            )}
+            
             <Button variant="ghost" size="icon" className="sm:hidden">
               <Menu className="w-4 h-4" />
             </Button>

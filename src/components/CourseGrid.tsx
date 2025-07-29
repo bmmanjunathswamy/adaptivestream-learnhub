@@ -1,10 +1,12 @@
 import CourseCard from "./CourseCard";
 import { Button } from "@/components/ui/button";
+import { useNavigate } from "react-router-dom";
 import webDevImage from "@/assets/course-web-dev.jpg";
 import dataScienceImage from "@/assets/course-data-science.jpg";
 import mobileDevImage from "@/assets/course-mobile-dev.jpg";
 
 const CourseGrid = () => {
+  const navigate = useNavigate();
   const courses = [
     {
       id: "1",
@@ -109,7 +111,7 @@ const CourseGrid = () => {
 
         {/* View All Button */}
         <div className="text-center">
-          <Button variant="outline" size="lg" className="min-w-48">
+          <Button variant="outline" size="lg" className="min-w-48" onClick={() => navigate("/courses")}>
             View All Courses
           </Button>
         </div>
