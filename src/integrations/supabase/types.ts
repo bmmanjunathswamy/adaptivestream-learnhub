@@ -80,6 +80,55 @@ export type Database = {
           },
         ]
       }
+      course_experiments: {
+        Row: {
+          course_id: string | null
+          created_at: string
+          experiment_id: string | null
+          id: string
+          section_id: string | null
+          sort_order: number | null
+        }
+        Insert: {
+          course_id?: string | null
+          created_at?: string
+          experiment_id?: string | null
+          id?: string
+          section_id?: string | null
+          sort_order?: number | null
+        }
+        Update: {
+          course_id?: string | null
+          created_at?: string
+          experiment_id?: string | null
+          id?: string
+          section_id?: string | null
+          sort_order?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "course_experiments_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "course_experiments_experiment_id_fkey"
+            columns: ["experiment_id"]
+            isOneToOne: false
+            referencedRelation: "experiments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "course_experiments_section_id_fkey"
+            columns: ["section_id"]
+            isOneToOne: false
+            referencedRelation: "sections"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       courses: {
         Row: {
           category_id: string | null
@@ -140,6 +189,42 @@ export type Database = {
           },
         ]
       }
+      experiments: {
+        Row: {
+          components_required: Json | null
+          created_at: string
+          description: string | null
+          difficulty_level: string | null
+          estimated_duration_minutes: number | null
+          id: string
+          instructions: string | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          components_required?: Json | null
+          created_at?: string
+          description?: string | null
+          difficulty_level?: string | null
+          estimated_duration_minutes?: number | null
+          id?: string
+          instructions?: string | null
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          components_required?: Json | null
+          created_at?: string
+          description?: string | null
+          difficulty_level?: string | null
+          estimated_duration_minutes?: number | null
+          id?: string
+          instructions?: string | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -172,6 +257,44 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      sections: {
+        Row: {
+          course_id: string | null
+          created_at: string
+          description: string | null
+          id: string
+          sort_order: number | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          course_id?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          sort_order?: number | null
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          course_id?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          sort_order?: number | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sections_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       user_progress: {
         Row: {
@@ -368,10 +491,15 @@ export type Database = {
           attachments: Json | null
           course_id: string | null
           created_at: string
+          dash_manifest_url: string | null
+          dash_playlist_url: string | null
           description: string | null
           duration_seconds: number | null
           file_size_bytes: number | null
           id: string
+          original_file_url: string | null
+          processing_status: string | null
+          section_id: string | null
           sort_order: number | null
           thumbnail_url: string | null
           title: string
@@ -382,10 +510,15 @@ export type Database = {
           attachments?: Json | null
           course_id?: string | null
           created_at?: string
+          dash_manifest_url?: string | null
+          dash_playlist_url?: string | null
           description?: string | null
           duration_seconds?: number | null
           file_size_bytes?: number | null
           id?: string
+          original_file_url?: string | null
+          processing_status?: string | null
+          section_id?: string | null
           sort_order?: number | null
           thumbnail_url?: string | null
           title: string
@@ -396,10 +529,15 @@ export type Database = {
           attachments?: Json | null
           course_id?: string | null
           created_at?: string
+          dash_manifest_url?: string | null
+          dash_playlist_url?: string | null
           description?: string | null
           duration_seconds?: number | null
           file_size_bytes?: number | null
           id?: string
+          original_file_url?: string | null
+          processing_status?: string | null
+          section_id?: string | null
           sort_order?: number | null
           thumbnail_url?: string | null
           title?: string
@@ -412,6 +550,13 @@ export type Database = {
             columns: ["course_id"]
             isOneToOne: false
             referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "videos_section_id_fkey"
+            columns: ["section_id"]
+            isOneToOne: false
+            referencedRelation: "sections"
             referencedColumns: ["id"]
           },
         ]

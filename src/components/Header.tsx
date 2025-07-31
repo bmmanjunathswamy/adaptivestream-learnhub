@@ -6,7 +6,7 @@ import { useNavigate, Link } from "react-router-dom";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 const Header = () => {
-  const { user, signOut } = useAuth();
+  const { user, userProfile, signOut } = useAuth();
   const navigate = useNavigate();
 
   const handleSignOut = async () => {
@@ -34,6 +34,11 @@ const Header = () => {
             <Link to="/courses" className="text-foreground hover:text-primary transition-colors font-medium">
               Courses
             </Link>
+            {userProfile?.role === 'admin' && (
+              <Link to="/admin" className="text-foreground hover:text-primary transition-colors font-medium">
+                Admin
+              </Link>
+            )}
             <a href="#" className="text-foreground hover:text-primary transition-colors font-medium">
               Categories
             </a>
