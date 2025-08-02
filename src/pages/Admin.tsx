@@ -9,10 +9,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Plus, Edit, Trash2, Upload, FileVideo } from 'lucide-react';
+import { Plus, Edit, Upload, FileVideo } from 'lucide-react';
+import AdminLayout from '@/components/AdminLayout';
 import type { Database } from '@/integrations/supabase/types';
 
 type CourseLevel = 'Beginner' | 'Intermediate' | 'Advanced';
@@ -55,14 +55,10 @@ interface Video {
   sort_order: number;
 }
 
-export default function Admin() {
-  const { user, userProfile, loading: authLoading } = useAuth();
+function AdminContent() {
+  const { userProfile } = useAuth();
   const { toast } = useToast();
   
-  // Debug logging
-  console.log('Admin component - user:', user);
-  console.log('Admin component - userProfile:', userProfile);
-  console.log('Admin component - auth loading:', authLoading);
   const [courses, setCourses] = useState<Course[]>([]);
   const [sections, setSections] = useState<Section[]>([]);
   const [experiments, setExperiments] = useState<Experiment[]>([]);
@@ -97,10 +93,8 @@ export default function Admin() {
   const [uploadProgress, setUploadProgress] = useState(0);
 
   useEffect(() => {
-    if (userProfile?.role === 'admin') {
-      loadData();
-    }
-  }, [userProfile]);
+    loadData();
+  }, []);
 
   const loadData = async () => {
     setDataLoading(true);
@@ -116,7 +110,10 @@ export default function Admin() {
       if (sectionsRes.data) setSections(sectionsRes.data);
       if (experimentsRes.data) setExperiments(experimentsRes.data as Experiment[]);
       if (videosRes.data) setVideos(videosRes.data);
+
+      console.log('Admin data loaded successfully');
     } catch (error) {
+      console.error('Error loading admin data:', error);
       toast({
         title: "Error",
         description: "Failed to load admin data",
@@ -147,6 +144,7 @@ export default function Admin() {
         description: "Course created successfully"
       });
     } catch (error) {
+      console.error('Error creating course:', error);
       toast({
         title: "Error",
         description: "Failed to create course",
@@ -172,6 +170,7 @@ export default function Admin() {
         description: "Section created successfully"
       });
     } catch (error) {
+      console.error('Error creating section:', error);
       toast({
         title: "Error",
         description: "Failed to create section",
@@ -209,6 +208,7 @@ export default function Admin() {
         description: "Experiment created successfully"
       });
     } catch (error) {
+      console.error('Error creating experiment:', error);
       toast({
         title: "Error",
         description: "Failed to create experiment",
@@ -235,6 +235,7 @@ export default function Admin() {
         description: `Course ${!currentStatus ? 'published' : 'unpublished'} successfully`
       });
     } catch (error) {
+      console.error('Error updating course status:', error);
       toast({
         title: "Error",
         description: "Failed to update course status",
@@ -243,38 +244,13 @@ export default function Admin() {
     }
   };
 
-  // Show loading while auth is loading
-  if (authLoading) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <Card>
-          <CardContent className="p-6">
-            <p className="text-center text-muted-foreground">Loading...</p>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  if (userProfile?.role !== 'admin') {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <Card>
-          <CardContent className="p-6">
-            <p className="text-center text-muted-foreground">Access denied. Admin privileges required.</p>
-            <p className="text-center text-xs text-muted-foreground mt-2">Debug: role = {userProfile?.role || 'undefined'}</p>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-background">
       <div className="container mx-auto px-4 py-8">
         <div className="mb-8">
           <h1 className="text-4xl font-bold text-foreground mb-2">Admin Dashboard</h1>
           <p className="text-muted-foreground">Manage courses, sections, experiments, and video content</p>
+          <p className="text-sm text-muted-foreground mt-2">Welcome, {userProfile?.first_name || 'Admin'}</p>
         </div>
 
         <Tabs defaultValue="courses" className="space-y-6">
@@ -335,7 +311,7 @@ export default function Admin() {
                     onChange={(e) => setNewCourse({ ...newCourse, price: parseFloat(e.target.value) || 0 })}
                   />
                 </div>
-                <Button onClick={createCourse} disabled={!newCourse.title}>
+                <Button onClick={createCourse} disabled={!newCourse.title || dataLoading}>
                   <Plus className="h-4 w-4 mr-2" />
                   Create Course
                 </Button>
@@ -344,43 +320,49 @@ export default function Admin() {
 
             <Card>
               <CardHeader>
-                <CardTitle>Courses</CardTitle>
+                <CardTitle>Courses ({courses.length})</CardTitle>
               </CardHeader>
               <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Title</TableHead>
-                      <TableHead>Level</TableHead>
-                      <TableHead>Price</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {courses.map((course) => (
-                      <TableRow key={course.id}>
-                        <TableCell className="font-medium">{course.title}</TableCell>
-                        <TableCell>{course.level}</TableCell>
-                        <TableCell>${course.price}</TableCell>
-                        <TableCell>
-                          <Badge variant={course.is_published ? "default" : "secondary"}>
-                            {course.is_published ? "Published" : "Draft"}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => toggleCoursePublish(course.id, course.is_published)}
-                          >
-                            {course.is_published ? "Unpublish" : "Publish"}
-                          </Button>
-                        </TableCell>
+                {dataLoading ? (
+                  <p className="text-center text-muted-foreground py-4">Loading courses...</p>
+                ) : courses.length === 0 ? (
+                  <p className="text-center text-muted-foreground py-4">No courses found</p>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Title</TableHead>
+                        <TableHead>Level</TableHead>
+                        <TableHead>Price</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Actions</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {courses.map((course) => (
+                        <TableRow key={course.id}>
+                          <TableCell className="font-medium">{course.title}</TableCell>
+                          <TableCell>{course.level}</TableCell>
+                          <TableCell>${course.price}</TableCell>
+                          <TableCell>
+                            <Badge variant={course.is_published ? "default" : "secondary"}>
+                              {course.is_published ? "Published" : "Draft"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => toggleCoursePublish(course.id, course.is_published)}
+                            >
+                              {course.is_published ? "Unpublish" : "Publish"}
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -692,5 +674,13 @@ export default function Admin() {
         </Tabs>
       </div>
     </div>
+  );
+}
+
+export default function Admin() {
+  return (
+    <AdminLayout>
+      <AdminContent />
+    </AdminLayout>
   );
 }
