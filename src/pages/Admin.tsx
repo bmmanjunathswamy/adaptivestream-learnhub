@@ -56,13 +56,18 @@ interface Video {
 }
 
 export default function Admin() {
-  const { user, userProfile } = useAuth();
+  const { user, userProfile, loading: authLoading } = useAuth();
   const { toast } = useToast();
+  
+  // Debug logging
+  console.log('Admin component - user:', user);
+  console.log('Admin component - userProfile:', userProfile);
+  console.log('Admin component - auth loading:', authLoading);
   const [courses, setCourses] = useState<Course[]>([]);
   const [sections, setSections] = useState<Section[]>([]);
   const [experiments, setExperiments] = useState<Experiment[]>([]);
   const [videos, setVideos] = useState<Video[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [dataLoading, setDataLoading] = useState(false);
 
   // Form states
   const [newCourse, setNewCourse] = useState({
@@ -98,7 +103,7 @@ export default function Admin() {
   }, [userProfile]);
 
   const loadData = async () => {
-    setLoading(true);
+    setDataLoading(true);
     try {
       const [coursesRes, sectionsRes, experimentsRes, videosRes] = await Promise.all([
         supabase.from('courses').select('*').order('created_at', { ascending: false }),
@@ -118,7 +123,7 @@ export default function Admin() {
         variant: "destructive"
       });
     } finally {
-      setLoading(false);
+      setDataLoading(false);
     }
   };
 
@@ -238,12 +243,26 @@ export default function Admin() {
     }
   };
 
+  // Show loading while auth is loading
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Card>
+          <CardContent className="p-6">
+            <p className="text-center text-muted-foreground">Loading...</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   if (userProfile?.role !== 'admin') {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <Card>
           <CardContent className="p-6">
             <p className="text-center text-muted-foreground">Access denied. Admin privileges required.</p>
+            <p className="text-center text-xs text-muted-foreground mt-2">Debug: role = {userProfile?.role || 'undefined'}</p>
           </CardContent>
         </Card>
       </div>
