@@ -10,8 +10,9 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Label } from '@/components/ui/label';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Edit, Upload, FileVideo, Users, BookOpen, FlaskConical, Play } from 'lucide-react';
+import { Plus, Edit, Trash2, Upload, FileVideo, Users, BookOpen, FlaskConical, Play } from 'lucide-react';
 import AdminLayout from '@/components/AdminLayout';
 import type { Database } from '@/integrations/supabase/types';
 
@@ -52,6 +53,7 @@ interface Video {
   video_url: string;
   processing_status: string;
   section_id: string;
+  course_id: string;
   sort_order: number;
 }
 
@@ -64,6 +66,12 @@ function AdminContent() {
   const [experiments, setExperiments] = useState<Experiment[]>([]);
   const [videos, setVideos] = useState<Video[]>([]);
   const [dataLoading, setDataLoading] = useState(false);
+
+  // Edit states
+  const [editingCourse, setEditingCourse] = useState<Course | null>(null);
+  const [editingSection, setEditingSection] = useState<Section | null>(null);
+  const [editingExperiment, setEditingExperiment] = useState<Experiment | null>(null);
+  const [editingVideo, setEditingVideo] = useState<Video | null>(null);
 
   // Form states
   const [newCourse, setNewCourse] = useState({
@@ -87,6 +95,14 @@ function AdminContent() {
     instructions: '',
     difficulty_level: 'beginner',
     estimated_duration_minutes: 60
+  });
+
+  const [newVideo, setNewVideo] = useState({
+    title: '',
+    description: '',
+    course_id: '',
+    section_id: '',
+    sort_order: 0
   });
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -244,6 +260,248 @@ function AdminContent() {
     }
   };
 
+  const updateCourse = async (course: Course) => {
+    try {
+      const { error } = await supabase
+        .from('courses')
+        .update({
+          title: course.title,
+          description: course.description,
+          level: course.level,
+          price: course.price
+        })
+        .eq('id', course.id);
+
+      if (error) throw error;
+
+      setCourses(courses.map(c => c.id === course.id ? course : c));
+      setEditingCourse(null);
+      toast({
+        title: "Success",
+        description: "Course updated successfully"
+      });
+    } catch (error) {
+      console.error('Error updating course:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update course",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const deleteCourse = async (courseId: string) => {
+    try {
+      const { error } = await supabase
+        .from('courses')
+        .delete()
+        .eq('id', courseId);
+
+      if (error) throw error;
+
+      setCourses(courses.filter(c => c.id !== courseId));
+      toast({
+        title: "Success",
+        description: "Course deleted successfully"
+      });
+    } catch (error) {
+      console.error('Error deleting course:', error);
+      toast({
+        title: "Error",
+        description: "Failed to delete course",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const updateSection = async (section: Section) => {
+    try {
+      const { error } = await supabase
+        .from('sections')
+        .update({
+          title: section.title,
+          description: section.description,
+          sort_order: section.sort_order
+        })
+        .eq('id', section.id);
+
+      if (error) throw error;
+
+      setSections(sections.map(s => s.id === section.id ? section : s));
+      setEditingSection(null);
+      toast({
+        title: "Success",
+        description: "Section updated successfully"
+      });
+    } catch (error) {
+      console.error('Error updating section:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update section",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const deleteSection = async (sectionId: string) => {
+    try {
+      const { error } = await supabase
+        .from('sections')
+        .delete()
+        .eq('id', sectionId);
+
+      if (error) throw error;
+
+      setSections(sections.filter(s => s.id !== sectionId));
+      toast({
+        title: "Success",
+        description: "Section deleted successfully"
+      });
+    } catch (error) {
+      console.error('Error deleting section:', error);
+      toast({
+        title: "Error",
+        description: "Failed to delete section",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const updateExperiment = async (experiment: Experiment) => {
+    try {
+      const { error } = await supabase
+        .from('experiments')
+        .update({
+          title: experiment.title,
+          description: experiment.description,
+          instructions: experiment.instructions,
+          difficulty_level: experiment.difficulty_level,
+          estimated_duration_minutes: experiment.estimated_duration_minutes,
+          components_required: experiment.components_required
+        })
+        .eq('id', experiment.id);
+
+      if (error) throw error;
+
+      setExperiments(experiments.map(e => e.id === experiment.id ? experiment : e));
+      setEditingExperiment(null);
+      toast({
+        title: "Success",
+        description: "Experiment updated successfully"
+      });
+    } catch (error) {
+      console.error('Error updating experiment:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update experiment",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const deleteExperiment = async (experimentId: string) => {
+    try {
+      const { error } = await supabase
+        .from('experiments')
+        .delete()
+        .eq('id', experimentId);
+
+      if (error) throw error;
+
+      setExperiments(experiments.filter(e => e.id !== experimentId));
+      toast({
+        title: "Success",
+        description: "Experiment deleted successfully"
+      });
+    } catch (error) {
+      console.error('Error deleting experiment:', error);
+      toast({
+        title: "Error",
+        description: "Failed to delete experiment",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const createVideo = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('videos')
+        .insert(newVideo)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      setVideos([...videos, data]);
+      setNewVideo({ title: '', description: '', course_id: '', section_id: '', sort_order: 0 });
+      toast({
+        title: "Success",
+        description: "Video created successfully"
+      });
+    } catch (error) {
+      console.error('Error creating video:', error);
+      toast({
+        title: "Error",
+        description: "Failed to create video",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const updateVideo = async (video: Video) => {
+    try {
+      const { error } = await supabase
+        .from('videos')
+        .update({
+          title: video.title,
+          description: video.description,
+          sort_order: video.sort_order
+        })
+        .eq('id', video.id);
+
+      if (error) throw error;
+
+      setVideos(videos.map(v => v.id === video.id ? video : v));
+      setEditingVideo(null);
+      toast({
+        title: "Success",
+        description: "Video updated successfully"
+      });
+    } catch (error) {
+      console.error('Error updating video:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update video",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const deleteVideo = async (videoId: string) => {
+    try {
+      const { error } = await supabase
+        .from('videos')
+        .delete()
+        .eq('id', videoId);
+
+      if (error) throw error;
+
+      setVideos(videos.filter(v => v.id !== videoId));
+      toast({
+        title: "Success",
+        description: "Video deleted successfully"
+      });
+    } catch (error) {
+      console.error('Error deleting video:', error);
+      toast({
+        title: "Error",
+        description: "Failed to delete video",
+        variant: "destructive"
+      });
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <div className="container mx-auto px-4 py-8">
@@ -350,13 +608,78 @@ function AdminContent() {
                             </Badge>
                           </TableCell>
                           <TableCell>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => toggleCoursePublish(course.id, course.is_published)}
-                            >
-                              {course.is_published ? "Unpublish" : "Publish"}
-                            </Button>
+                            <div className="flex gap-2">
+                              <Dialog>
+                                <DialogTrigger asChild>
+                                  <Button variant="outline" size="sm" onClick={() => setEditingCourse(course)}>
+                                    <Edit className="h-4 w-4" />
+                                  </Button>
+                                </DialogTrigger>
+                                <DialogContent>
+                                  <DialogHeader>
+                                    <DialogTitle>Edit Course</DialogTitle>
+                                    <DialogDescription>Update course information</DialogDescription>
+                                  </DialogHeader>
+                                  {editingCourse && (
+                                    <div className="space-y-4">
+                                      <div>
+                                        <Label>Title</Label>
+                                        <Input
+                                          value={editingCourse.title}
+                                          onChange={(e) => setEditingCourse({ ...editingCourse, title: e.target.value })}
+                                        />
+                                      </div>
+                                      <div>
+                                        <Label>Description</Label>
+                                        <Textarea
+                                          value={editingCourse.description}
+                                          onChange={(e) => setEditingCourse({ ...editingCourse, description: e.target.value })}
+                                        />
+                                      </div>
+                                      <div>
+                                        <Label>Level</Label>
+                                        <Select value={editingCourse.level} onValueChange={(value: CourseLevel) => setEditingCourse({ ...editingCourse, level: value })}>
+                                          <SelectTrigger>
+                                            <SelectValue />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            <SelectItem value="Beginner">Beginner</SelectItem>
+                                            <SelectItem value="Intermediate">Intermediate</SelectItem>
+                                            <SelectItem value="Advanced">Advanced</SelectItem>
+                                          </SelectContent>
+                                        </Select>
+                                      </div>
+                                      <div>
+                                        <Label>Price ($)</Label>
+                                        <Input
+                                          type="number"
+                                          value={editingCourse.price}
+                                          onChange={(e) => setEditingCourse({ ...editingCourse, price: parseFloat(e.target.value) || 0 })}
+                                        />
+                                      </div>
+                                      <div className="flex gap-2">
+                                        <Button onClick={() => updateCourse(editingCourse)}>Save</Button>
+                                        <Button variant="outline" onClick={() => setEditingCourse(null)}>Cancel</Button>
+                                      </div>
+                                    </div>
+                                  )}
+                                </DialogContent>
+                              </Dialog>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => toggleCoursePublish(course.id, course.is_published)}
+                              >
+                                {course.is_published ? "Unpublish" : "Publish"}
+                              </Button>
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                onClick={() => deleteCourse(course.id)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -449,9 +772,58 @@ function AdminContent() {
                           <TableCell>{course?.title}</TableCell>
                           <TableCell>{section.sort_order}</TableCell>
                           <TableCell>
-                            <Button variant="outline" size="sm">
-                              <Edit className="h-4 w-4" />
-                            </Button>
+                            <div className="flex gap-2">
+                              <Dialog>
+                                <DialogTrigger asChild>
+                                  <Button variant="outline" size="sm" onClick={() => setEditingSection(section)}>
+                                    <Edit className="h-4 w-4" />
+                                  </Button>
+                                </DialogTrigger>
+                                <DialogContent>
+                                  <DialogHeader>
+                                    <DialogTitle>Edit Section</DialogTitle>
+                                    <DialogDescription>Update section information</DialogDescription>
+                                  </DialogHeader>
+                                  {editingSection && (
+                                    <div className="space-y-4">
+                                      <div>
+                                        <Label>Title</Label>
+                                        <Input
+                                          value={editingSection.title}
+                                          onChange={(e) => setEditingSection({ ...editingSection, title: e.target.value })}
+                                        />
+                                      </div>
+                                      <div>
+                                        <Label>Description</Label>
+                                        <Textarea
+                                          value={editingSection.description}
+                                          onChange={(e) => setEditingSection({ ...editingSection, description: e.target.value })}
+                                        />
+                                      </div>
+                                      <div>
+                                        <Label>Sort Order</Label>
+                                        <Input
+                                          type="number"
+                                          value={editingSection.sort_order}
+                                          onChange={(e) => setEditingSection({ ...editingSection, sort_order: parseInt(e.target.value) || 0 })}
+                                        />
+                                      </div>
+                                      <div className="flex gap-2">
+                                        <Button onClick={() => updateSection(editingSection)}>Save</Button>
+                                        <Button variant="outline" onClick={() => setEditingSection(null)}>Cancel</Button>
+                                      </div>
+                                    </div>
+                                  )}
+                                </DialogContent>
+                              </Dialog>
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                onClick={() => deleteSection(section.id)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       );
@@ -539,50 +911,113 @@ function AdminContent() {
 
             <Card>
               <CardHeader>
-                <CardTitle>Experiments</CardTitle>
+                <CardTitle>Experiments ({experiments.length})</CardTitle>
               </CardHeader>
               <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Title</TableHead>
-                      <TableHead>Difficulty</TableHead>
-                      <TableHead>Duration</TableHead>
-                      <TableHead>Components</TableHead>
-                      <TableHead>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {experiments.map((experiment) => (
-                      <TableRow key={experiment.id}>
-                        <TableCell className="font-medium">{experiment.title}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline">{experiment.difficulty_level}</Badge>
-                        </TableCell>
-                        <TableCell>{experiment.estimated_duration_minutes}m</TableCell>
-                        <TableCell>
-                          <div className="flex flex-wrap gap-1">
-                            {Array.isArray(experiment.components_required) && experiment.components_required.slice(0, 3).map((component, index) => (
-                              <Badge key={index} variant="secondary" className="text-xs">
-                                {component}
-                              </Badge>
-                            ))}
-                            {Array.isArray(experiment.components_required) && experiment.components_required.length > 3 && (
-                              <Badge variant="secondary" className="text-xs">
-                                +{experiment.components_required.length - 3}
-                              </Badge>
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Button variant="outline" size="sm">
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                        </TableCell>
+                {dataLoading ? (
+                  <p className="text-center text-muted-foreground py-4">Loading experiments...</p>
+                ) : experiments.length === 0 ? (
+                  <p className="text-center text-muted-foreground py-4">No experiments found</p>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Title</TableHead>
+                        <TableHead>Difficulty</TableHead>
+                        <TableHead>Duration (min)</TableHead>
+                        <TableHead>Actions</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {experiments.map((experiment) => (
+                        <TableRow key={experiment.id}>
+                          <TableCell className="font-medium">{experiment.title}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline">{experiment.difficulty_level}</Badge>
+                          </TableCell>
+                          <TableCell>{experiment.estimated_duration_minutes}</TableCell>
+                          <TableCell>
+                            <div className="flex gap-2">
+                              <Dialog>
+                                <DialogTrigger asChild>
+                                  <Button variant="outline" size="sm" onClick={() => setEditingExperiment(experiment)}>
+                                    <Edit className="h-4 w-4" />
+                                  </Button>
+                                </DialogTrigger>
+                                <DialogContent className="max-w-2xl">
+                                  <DialogHeader>
+                                    <DialogTitle>Edit Experiment</DialogTitle>
+                                    <DialogDescription>Update experiment information</DialogDescription>
+                                  </DialogHeader>
+                                  {editingExperiment && (
+                                    <div className="space-y-4 max-h-96 overflow-y-auto">
+                                      <div>
+                                        <Label>Title</Label>
+                                        <Input
+                                          value={editingExperiment.title}
+                                          onChange={(e) => setEditingExperiment({ ...editingExperiment, title: e.target.value })}
+                                        />
+                                      </div>
+                                      <div>
+                                        <Label>Description</Label>
+                                        <Textarea
+                                          value={editingExperiment.description}
+                                          onChange={(e) => setEditingExperiment({ ...editingExperiment, description: e.target.value })}
+                                        />
+                                      </div>
+                                      <div>
+                                        <Label>Instructions</Label>
+                                        <Textarea
+                                          value={editingExperiment.instructions}
+                                          onChange={(e) => setEditingExperiment({ ...editingExperiment, instructions: e.target.value })}
+                                        />
+                                      </div>
+                                      <div>
+                                        <Label>Difficulty Level</Label>
+                                        <Select 
+                                          value={editingExperiment.difficulty_level} 
+                                          onValueChange={(value) => setEditingExperiment({ ...editingExperiment, difficulty_level: value })}
+                                        >
+                                          <SelectTrigger>
+                                            <SelectValue />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            <SelectItem value="beginner">Beginner</SelectItem>
+                                            <SelectItem value="intermediate">Intermediate</SelectItem>
+                                            <SelectItem value="advanced">Advanced</SelectItem>
+                                          </SelectContent>
+                                        </Select>
+                                      </div>
+                                      <div>
+                                        <Label>Duration (minutes)</Label>
+                                        <Input
+                                          type="number"
+                                          value={editingExperiment.estimated_duration_minutes}
+                                          onChange={(e) => setEditingExperiment({ ...editingExperiment, estimated_duration_minutes: parseInt(e.target.value) || 0 })}
+                                        />
+                                      </div>
+                                      <div className="flex gap-2">
+                                        <Button onClick={() => updateExperiment(editingExperiment)}>Save</Button>
+                                        <Button variant="outline" onClick={() => setEditingExperiment(null)}>Cancel</Button>
+                                      </div>
+                                    </div>
+                                  )}
+                                </DialogContent>
+                              </Dialog>
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                onClick={() => deleteExperiment(experiment.id)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -590,84 +1025,182 @@ function AdminContent() {
           <TabsContent value="videos" className="space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle>Video Processing</CardTitle>
-                <CardDescription>Upload and process videos for DASH streaming</CardDescription>
+                <CardTitle>Create New Video</CardTitle>
+                <CardDescription>Add video content for courses</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div>
-                  <Label htmlFor="video-upload">Select Video File</Label>
-                  <div className="flex items-center gap-4">
-                    <Input
-                      id="video-upload"
-                      type="file"
-                      accept="video/*"
-                      onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
-                    />
-                    <Button disabled={!selectedFile}>
-                      <Upload className="h-4 w-4 mr-2" />
-                      Upload & Process
-                    </Button>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="video-course">Course</Label>
+                    <Select value={newVideo.course_id} onValueChange={(value) => setNewVideo({ ...newVideo, course_id: value, section_id: '' })}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select a course" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {courses.map((course) => (
+                          <SelectItem key={course.id} value={course.id}>
+                            {course.title}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label htmlFor="video-section">Section</Label>
+                    <Select 
+                      value={newVideo.section_id} 
+                      onValueChange={(value) => setNewVideo({ ...newVideo, section_id: value })}
+                      disabled={!newVideo.course_id}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select a section" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {sections
+                          .filter(section => section.course_id === newVideo.course_id)
+                          .map((section) => (
+                            <SelectItem key={section.id} value={section.id}>
+                              {section.title}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
-                {uploadProgress > 0 && (
-                  <div className="w-full bg-secondary rounded-full h-2">
-                    <div
-                      className="bg-primary h-2 rounded-full transition-all duration-300"
-                      style={{ width: `${uploadProgress}%` }}
-                    />
-                  </div>
-                )}
+                <div>
+                  <Label htmlFor="video-title">Title</Label>
+                  <Input
+                    id="video-title"
+                    placeholder="Video title"
+                    value={newVideo.title}
+                    onChange={(e) => setNewVideo({ ...newVideo, title: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="video-description">Description</Label>
+                  <Textarea
+                    id="video-description"
+                    placeholder="Video description"
+                    value={newVideo.description}
+                    onChange={(e) => setNewVideo({ ...newVideo, description: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="video-order">Sort Order</Label>
+                  <Input
+                    id="video-order"
+                    type="number"
+                    placeholder="0"
+                    value={newVideo.sort_order}
+                    onChange={(e) => setNewVideo({ ...newVideo, sort_order: parseInt(e.target.value) || 0 })}
+                  />
+                </div>
+                <Button onClick={createVideo} disabled={!newVideo.title || !newVideo.course_id || !newVideo.section_id}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create Video
+                </Button>
               </CardContent>
             </Card>
 
             <Card>
               <CardHeader>
-                <CardTitle>Videos</CardTitle>
+                <CardTitle>Videos ({videos.length})</CardTitle>
               </CardHeader>
               <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Title</TableHead>
-                      <TableHead>Section</TableHead>
-                      <TableHead>Processing Status</TableHead>
-                      <TableHead>Sort Order</TableHead>
-                      <TableHead>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {videos.map((video) => {
-                      const section = sections.find(s => s.id === video.section_id);
-                      return (
-                        <TableRow key={video.id}>
-                          <TableCell className="font-medium">{video.title}</TableCell>
-                          <TableCell>{section?.title}</TableCell>
-                          <TableCell>
-                            <Badge 
-                              variant={
-                                video.processing_status === 'completed' ? 'default' :
-                                video.processing_status === 'processing' ? 'secondary' : 'destructive'
-                              }
-                            >
-                              {video.processing_status}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>{video.sort_order}</TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <Button variant="outline" size="sm">
-                                <FileVideo className="h-4 w-4" />
-                              </Button>
-                              <Button variant="outline" size="sm">
-                                <Edit className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
+                {dataLoading ? (
+                  <p className="text-center text-muted-foreground py-4">Loading videos...</p>
+                ) : videos.length === 0 ? (
+                  <p className="text-center text-muted-foreground py-4">No videos found</p>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Title</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Course</TableHead>
+                        <TableHead>Section</TableHead>
+                        <TableHead>Order</TableHead>
+                        <TableHead>Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {videos.map((video) => {
+                        const course = courses.find(c => c.id === video.course_id);
+                        const section = sections.find(s => s.id === video.section_id);
+                        return (
+                          <TableRow key={video.id}>
+                            <TableCell className="font-medium">{video.title}</TableCell>
+                            <TableCell>
+                              <Badge 
+                                variant={video.processing_status === 'completed' ? "default" : 
+                                       video.processing_status === 'processing' ? "secondary" : "destructive"}
+                              >
+                                {video.processing_status}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>{course?.title}</TableCell>
+                            <TableCell>{section?.title}</TableCell>
+                            <TableCell>{video.sort_order}</TableCell>
+                            <TableCell>
+                              <div className="flex gap-2">
+                                <Dialog>
+                                  <DialogTrigger asChild>
+                                    <Button variant="outline" size="sm" onClick={() => setEditingVideo(video)}>
+                                      <Edit className="h-4 w-4" />
+                                    </Button>
+                                  </DialogTrigger>
+                                  <DialogContent>
+                                    <DialogHeader>
+                                      <DialogTitle>Edit Video</DialogTitle>
+                                      <DialogDescription>Update video information</DialogDescription>
+                                    </DialogHeader>
+                                    {editingVideo && (
+                                      <div className="space-y-4">
+                                        <div>
+                                          <Label>Title</Label>
+                                          <Input
+                                            value={editingVideo.title}
+                                            onChange={(e) => setEditingVideo({ ...editingVideo, title: e.target.value })}
+                                          />
+                                        </div>
+                                        <div>
+                                          <Label>Description</Label>
+                                          <Textarea
+                                            value={editingVideo.description}
+                                            onChange={(e) => setEditingVideo({ ...editingVideo, description: e.target.value })}
+                                          />
+                                        </div>
+                                        <div>
+                                          <Label>Sort Order</Label>
+                                          <Input
+                                            type="number"
+                                            value={editingVideo.sort_order}
+                                            onChange={(e) => setEditingVideo({ ...editingVideo, sort_order: parseInt(e.target.value) || 0 })}
+                                          />
+                                        </div>
+                                        <div className="flex gap-2">
+                                          <Button onClick={() => updateVideo(editingVideo)}>Save</Button>
+                                          <Button variant="outline" onClick={() => setEditingVideo(null)}>Cancel</Button>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </DialogContent>
+                                </Dialog>
+                                <Button
+                                  variant="destructive"
+                                  size="sm"
+                                  onClick={() => deleteVideo(video.id)}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
