@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Edit, Upload, FileVideo } from 'lucide-react';
+import { Plus, Edit, Upload, FileVideo, Users, BookOpen, FlaskConical, Play } from 'lucide-react';
 import AdminLayout from '@/components/AdminLayout';
 import type { Database } from '@/integrations/supabase/types';
 
