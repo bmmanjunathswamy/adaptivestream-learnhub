@@ -1193,7 +1193,13 @@ function AdminContent() {
                     <p className="text-sm text-center mt-1">{uploadProgress}% uploaded</p>
                   </div>
                 )}
-                <Button onClick={uploadAndCreateVideo} disabled={!newVideo.title || !newVideo.course_id || !newVideo.section_id || !videoFile || loading}>
+                <Button 
+                  onClick={() => {
+                    console.log('Upload button clicked, uploadAndCreateVideo function:', typeof uploadAndCreateVideo);
+                    uploadAndCreateVideo();
+                  }} 
+                  disabled={!newVideo.title || !newVideo.course_id || !newVideo.section_id || !videoFile || loading}
+                >
                   <Plus className="h-4 w-4 mr-2" />
                   {loading ? "Uploading & Processing..." : "Upload Video"}
                 </Button>
