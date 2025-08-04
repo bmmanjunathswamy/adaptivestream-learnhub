@@ -3,6 +3,7 @@ import React from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { Card, CardContent } from '@/components/ui/card';
 import { Loader2 } from 'lucide-react';
+import Header from '@/components/Header';
 
 interface AdminLayoutProps {
   children: React.ReactNode;
@@ -76,6 +77,11 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     );
   }
 
-  // User is authenticated and has admin role - render the admin content
-  return <>{children}</>;
+  // User is authenticated and has admin role - render the admin content with header
+  return (
+    <div className="min-h-screen bg-background">
+      <Header />
+      {children}
+    </div>
+  );
 }
