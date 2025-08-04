@@ -56,7 +56,7 @@ const Courses = () => {
         .order("created_at", { ascending: false });
 
       if (error) throw error;
-      setCourses(data || []);
+      setCourses((data || []) as any);
     } catch (error) {
       console.error("Error fetching courses:", error);
     } finally {

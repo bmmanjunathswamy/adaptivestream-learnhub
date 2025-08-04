@@ -78,10 +78,12 @@ const Course = () => {
         `)
         .eq("id", id)
         .eq("is_published", true)
-        .single();
+        .maybeSingle();
 
       if (courseError) throw courseError;
-      setCourse(courseData);
+      if (courseData) {
+        setCourse(courseData as any);
+      }
 
       // Fetch course videos
       const { data: videosData, error: videosError } = await supabase

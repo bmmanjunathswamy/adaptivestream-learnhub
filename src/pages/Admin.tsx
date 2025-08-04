@@ -107,6 +107,8 @@ function AdminContent() {
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -475,6 +477,80 @@ function AdminContent() {
         description: "Failed to update video",
         variant: "destructive"
       });
+    }
+  };
+
+  const uploadAndCreateVideo = async () => {
+    if (!videoFile) return;
+    
+    setLoading(true);
+    try {
+      // Upload video file to storage
+      const fileExt = videoFile.name.split('.').pop();
+      const fileName = `${Date.now()}.${fileExt}`;
+      const filePath = `original/${fileName}`;
+
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('videos')
+        .upload(filePath, videoFile);
+      
+      setUploadProgress(100);
+
+      if (uploadError) throw uploadError;
+
+      // Get public URL
+      const { data: urlData } = supabase.storage
+        .from('videos')
+        .getPublicUrl(filePath);
+
+      // Create video record
+      const { data: videoData, error: videoError } = await supabase
+        .from('videos')
+        .insert({
+          ...newVideo,
+          original_file_url: urlData.publicUrl,
+          processing_status: 'pending'
+        })
+        .select()
+        .single();
+
+      if (videoError) throw videoError;
+
+      // Start video processing
+      const { error: processingError } = await supabase.functions.invoke('video-processing-ffmpeg', {
+        body: {
+          videoId: videoData.id,
+          originalFileUrl: urlData.publicUrl
+        }
+      });
+
+      if (processingError) {
+        console.error('Processing error:', processingError);
+        toast({
+          title: "Warning",
+          description: "Video uploaded but processing failed. You can retry processing later.",
+          variant: "destructive"
+        });
+      }
+
+      setVideos([...videos, videoData]);
+      setNewVideo({ title: '', description: '', course_id: '', section_id: '', sort_order: 0 });
+      setVideoFile(null);
+      setUploadProgress(0);
+      
+      toast({
+        title: "Success",
+        description: "Video uploaded and processing started"
+      });
+    } catch (error) {
+      console.error('Error uploading video:', error);
+      toast({
+        title: "Error",
+        description: "Failed to upload video",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -1095,9 +1171,31 @@ function AdminContent() {
                     onChange={(e) => setNewVideo({ ...newVideo, sort_order: parseInt(e.target.value) || 0 })}
                   />
                 </div>
-                <Button onClick={createVideo} disabled={!newVideo.title || !newVideo.course_id || !newVideo.section_id}>
+                <div>
+                  <Label htmlFor="video-file">Upload Video File</Label>
+                  <Input
+                    id="video-file"
+                    type="file"
+                    accept="video/*"
+                    onChange={(e) => setVideoFile(e.target.files?.[0] || null)}
+                    className="mb-2"
+                  />
+                  <p className="text-sm text-muted-foreground">
+                    Video will be automatically processed to DASH format for adaptive streaming
+                  </p>
+                </div>
+                {uploadProgress > 0 && uploadProgress < 100 && (
+                  <div className="w-full bg-secondary rounded-full h-2">
+                    <div 
+                      className="bg-primary h-2 rounded-full transition-all duration-300" 
+                      style={{ width: `${uploadProgress}%` }}
+                    />
+                    <p className="text-sm text-center mt-1">{uploadProgress}% uploaded</p>
+                  </div>
+                )}
+                <Button onClick={uploadAndCreateVideo} disabled={!newVideo.title || !newVideo.course_id || !newVideo.section_id || !videoFile || loading}>
                   <Plus className="h-4 w-4 mr-2" />
-                  Create Video
+                  {loading ? "Uploading & Processing..." : "Upload Video"}
                 </Button>
               </CardContent>
             </Card>
