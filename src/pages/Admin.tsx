@@ -484,17 +484,21 @@ function AdminContent() {
     if (!videoFile) return;
     
     setLoading(true);
+    setUploadProgress(0);
+    
     try {
       // Upload video file to storage
       const fileExt = videoFile.name.split('.').pop();
       const fileName = `${Date.now()}.${fileExt}`;
       const filePath = `original/${fileName}`;
 
+      setUploadProgress(20); // Start progress
+
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from('videos')
         .upload(filePath, videoFile);
       
-      setUploadProgress(100);
+      setUploadProgress(60); // Upload complete
 
       if (uploadError) throw uploadError;
 
@@ -502,6 +506,8 @@ function AdminContent() {
       const { data: urlData } = supabase.storage
         .from('videos')
         .getPublicUrl(filePath);
+
+      setUploadProgress(80); // Getting URL complete
 
       // Create video record
       const { data: videoData, error: videoError } = await supabase
@@ -515,6 +521,8 @@ function AdminContent() {
         .single();
 
       if (videoError) throw videoError;
+
+      setUploadProgress(90); // Database record created
 
       // Start video processing
       const { error: processingError } = await supabase.functions.invoke('video-processing-ffmpeg', {
@@ -533,10 +541,18 @@ function AdminContent() {
         });
       }
 
+      setUploadProgress(100); // All complete
+
+      // Update videos list
       setVideos([...videos, videoData]);
+      
+      // Reset form
       setNewVideo({ title: '', description: '', course_id: '', section_id: '', sort_order: 0 });
       setVideoFile(null);
-      setUploadProgress(0);
+      
+      // Clear form file input
+      const fileInput = document.getElementById('video-file') as HTMLInputElement;
+      if (fileInput) fileInput.value = '';
       
       toast({
         title: "Success",
@@ -551,6 +567,8 @@ function AdminContent() {
       });
     } finally {
       setLoading(false);
+      // Reset progress after a short delay to show completion
+      setTimeout(() => setUploadProgress(0), 2000);
     }
   };
 
