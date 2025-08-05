@@ -495,11 +495,11 @@ function AdminContent() {
     }
     
     // File type validation
-    const allowedTypes = ['video/mp4', 'video/webm', 'video/ogg'];
+    const allowedTypes = ['video/mp4', 'video/webm', 'video/ogg', 'video/avi', 'video/mov'];
     if (!allowedTypes.includes(videoFile.type)) {
       toast({
         title: "Invalid File Type",
-        description: "Please upload a valid video file (MP4, WebM, or OGG)",
+        description: "Please upload a valid video file (MP4, WebM, OGG, AVI, or MOV)",
         variant: "destructive"
       });
       return;
@@ -509,46 +509,29 @@ function AdminContent() {
     setUploadProgress(0);
     
     try {
-      // Upload video file to storage
       const fileExt = videoFile.name.split('.').pop();
       const fileName = `${Date.now()}.${fileExt}`;
-      const filePath = `original/${fileName}`;
-
-      setUploadProgress(20); // Start progress
-
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('videos')
-        .upload(filePath, videoFile);
+      let publicUrl = '';
       
-      setUploadProgress(60); // Upload complete
-
-      if (uploadError) {
-        console.error('Upload error:', uploadError);
-        
-        // Handle specific error types
-        if (uploadError.message?.includes('exceeded') || uploadError.message?.includes('too large')) {
-          throw new Error('File size exceeds storage limits. Please compress your video or use a smaller file.');
-        } else if (uploadError.message?.includes('quota')) {
-          throw new Error('Storage quota exceeded. Please contact administrator.');
-        } else {
-          throw uploadError;
-        }
+      // Use chunked upload for files larger than 50MB
+      if (videoFile.size > 50 * 1024 * 1024) {
+        console.log('Using chunked upload for large file...');
+        publicUrl = await uploadLargeFile(videoFile, fileName);
+      } else {
+        console.log('Using direct upload for small file...');
+        publicUrl = await uploadSmallFile(videoFile, fileName);
       }
 
-      // Get public URL
-      const { data: urlData } = supabase.storage
-        .from('videos')
-        .getPublicUrl(filePath);
-
-      setUploadProgress(80); // Getting URL complete
+      setUploadProgress(80); // Upload complete
 
       // Create video record
       const { data: videoData, error: videoError } = await supabase
         .from('videos')
         .insert({
           ...newVideo,
-          original_file_url: urlData.publicUrl,
-          processing_status: 'pending'
+          original_file_url: publicUrl,
+          processing_status: 'pending',
+          file_size_bytes: videoFile.size
         })
         .select()
         .single();
@@ -561,7 +544,7 @@ function AdminContent() {
       const { error: processingError } = await supabase.functions.invoke('video-processing-ffmpeg', {
         body: {
           videoId: videoData.id,
-          originalFileUrl: urlData.publicUrl
+          originalFileUrl: publicUrl
         }
       });
 
@@ -618,6 +601,81 @@ function AdminContent() {
       // Reset progress after a short delay to show completion
       setTimeout(() => setUploadProgress(0), 2000);
     }
+  };
+
+  const uploadSmallFile = async (file: File, fileName: string): Promise<string> => {
+    const filePath = `original/${fileName}`;
+
+    setUploadProgress(20);
+
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from('videos')
+      .upload(filePath, file);
+    
+    setUploadProgress(60);
+
+    if (uploadError) {
+      console.error('Upload error:', uploadError);
+      
+      if (uploadError.message?.includes('exceeded') || uploadError.message?.includes('too large')) {
+        throw new Error('File size exceeds storage limits. Please compress your video or use a smaller file.');
+      } else if (uploadError.message?.includes('quota')) {
+        throw new Error('Storage quota exceeded. Please contact administrator.');
+      } else {
+        throw uploadError;
+      }
+    }
+
+    // Get public URL
+    const { data: urlData } = supabase.storage
+      .from('videos')
+      .getPublicUrl(filePath);
+
+    return urlData.publicUrl;
+  };
+
+  const uploadLargeFile = async (file: File, fileName: string): Promise<string> => {
+    const chunkSize = 5 * 1024 * 1024; // 5MB chunks
+    const totalChunks = Math.ceil(file.size / chunkSize);
+    const uploadId = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+    console.log(`Uploading ${file.name} in ${totalChunks} chunks of ${chunkSize} bytes each`);
+
+    for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+      const start = chunkIndex * chunkSize;
+      const end = Math.min(start + chunkSize, file.size);
+      const chunk = file.slice(start, end);
+
+      const formData = new FormData();
+      formData.append('chunk', chunk);
+      formData.append('chunkIndex', chunkIndex.toString());
+      formData.append('totalChunks', totalChunks.toString());
+      formData.append('fileName', fileName);
+      formData.append('uploadId', uploadId);
+
+      console.log(`Uploading chunk ${chunkIndex + 1}/${totalChunks}`);
+
+      const { data, error } = await supabase.functions.invoke('chunked-upload', {
+        body: formData
+      });
+
+      if (error) {
+        console.error(`Error uploading chunk ${chunkIndex}:`, error);
+        throw new Error(`Failed to upload chunk ${chunkIndex + 1}: ${error.message}`);
+      }
+
+      // Update progress based on chunk completion
+      const progressPercent = Math.floor(((chunkIndex + 1) / totalChunks) * 60) + 10;
+      setUploadProgress(progressPercent);
+
+      // If this was the last chunk, return the public URL
+      if (chunkIndex === totalChunks - 1) {
+        console.log('Chunked upload completed successfully');
+        return data.publicUrl;
+      }
+    }
+
+    throw new Error('Upload completed but no URL returned');
   };
 
   const deleteVideo = async (videoId: string) => {

@@ -1,1 +1,10 @@
 project_id = "qkegwegzchcswasmqfjh"
+
+[functions.chunked-upload]
+verify_jwt = true
+
+[functions.video-processing]
+verify_jwt = true
+
+[functions.video-processing-ffmpeg]
+verify_jwt = true
