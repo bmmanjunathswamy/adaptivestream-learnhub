@@ -483,12 +483,12 @@ function AdminContent() {
   const uploadAndCreateVideo = async () => {
     if (!videoFile) return;
     
-    // File size validation (50MB limit)
-    const maxSizeInBytes = 50 * 1024 * 1024; // 50MB
+    // File size validation (200MB limit)
+    const maxSizeInBytes = 200 * 1024 * 1024; // 200MB
     if (videoFile.size > maxSizeInBytes) {
       toast({
         title: "File Too Large",
-        description: `Video file must be smaller than 50MB. Current file size: ${(videoFile.size / (1024 * 1024)).toFixed(1)}MB`,
+        description: `Video file must be smaller than 200MB. Current file size: ${(videoFile.size / (1024 * 1024)).toFixed(1)}MB`,
         variant: "destructive"
       });
       return;
