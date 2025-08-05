@@ -483,6 +483,28 @@ function AdminContent() {
   const uploadAndCreateVideo = async () => {
     if (!videoFile) return;
     
+    // File size validation (50MB limit)
+    const maxSizeInBytes = 50 * 1024 * 1024; // 50MB
+    if (videoFile.size > maxSizeInBytes) {
+      toast({
+        title: "File Too Large",
+        description: `Video file must be smaller than 50MB. Current file size: ${(videoFile.size / (1024 * 1024)).toFixed(1)}MB`,
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    // File type validation
+    const allowedTypes = ['video/mp4', 'video/webm', 'video/ogg'];
+    if (!allowedTypes.includes(videoFile.type)) {
+      toast({
+        title: "Invalid File Type",
+        description: "Please upload a valid video file (MP4, WebM, or OGG)",
+        variant: "destructive"
+      });
+      return;
+    }
+    
     setLoading(true);
     setUploadProgress(0);
     
@@ -500,7 +522,18 @@ function AdminContent() {
       
       setUploadProgress(60); // Upload complete
 
-      if (uploadError) throw uploadError;
+      if (uploadError) {
+        console.error('Upload error:', uploadError);
+        
+        // Handle specific error types
+        if (uploadError.message?.includes('exceeded') || uploadError.message?.includes('too large')) {
+          throw new Error('File size exceeds storage limits. Please compress your video or use a smaller file.');
+        } else if (uploadError.message?.includes('quota')) {
+          throw new Error('Storage quota exceeded. Please contact administrator.');
+        } else {
+          throw uploadError;
+        }
+      }
 
       // Get public URL
       const { data: urlData } = supabase.storage
@@ -560,9 +593,24 @@ function AdminContent() {
       });
     } catch (error) {
       console.error('Error uploading video:', error);
+      
+      let errorMessage = "Failed to upload video";
+      
+      if (error instanceof Error) {
+        if (error.message.includes('exceeded') || error.message.includes('too large')) {
+          errorMessage = "File too large for upload. Please use a smaller video file.";
+        } else if (error.message.includes('quota')) {
+          errorMessage = "Storage quota exceeded. Please contact administrator.";
+        } else if (error.message.includes('network')) {
+          errorMessage = "Network error. Please check your connection and try again.";
+        } else {
+          errorMessage = error.message;
+        }
+      }
+      
       toast({
-        title: "Error",
-        description: "Failed to upload video",
+        title: "Upload Failed",
+        description: errorMessage,
         variant: "destructive"
       });
     } finally {
