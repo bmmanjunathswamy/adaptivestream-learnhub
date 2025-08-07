@@ -15,6 +15,11 @@ serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    
+    if (!supabaseUrl || !supabaseKey) {
+      throw new Error('Missing Supabase environment variables')
+    }
+    
     const supabase = createClient(supabaseUrl, supabaseKey)
 
     const formData = await req.formData()
@@ -30,101 +35,123 @@ serve(async (req) => {
 
     console.log(`Processing chunk ${chunkIndex + 1}/${totalChunks} for file ${fileName}`)
 
-    // Store chunk temporarily
-    const chunkPath = `temp/${uploadId}/chunk_${chunkIndex}`
+    // Store chunk temporarily with smaller chunks to avoid memory issues
+    const chunkPath = `temp/${uploadId}/chunk_${chunkIndex.toString().padStart(4, '0')}`
+    
+    // Convert chunk to ArrayBuffer for better handling
+    const chunkArrayBuffer = await chunk.arrayBuffer()
+    const chunkBlob = new Blob([chunkArrayBuffer])
     
     const { error: chunkError } = await supabase.storage
       .from('videos')
-      .upload(chunkPath, chunk, {
+      .upload(chunkPath, chunkBlob, {
         cacheControl: '3600',
         upsert: true
       })
 
     if (chunkError) {
       console.error('Chunk upload error:', chunkError)
-      throw chunkError
+      throw new Error(`Failed to upload chunk: ${chunkError.message}`)
     }
 
     // If this is the last chunk, combine all chunks
     if (chunkIndex === totalChunks - 1) {
       console.log('Last chunk received, combining chunks...')
       
-      // Create a stream to combine chunks without loading everything into memory
-      const chunks: Uint8Array[] = []
-      let totalSize = 0
-      
-      for (let i = 0; i < totalChunks; i++) {
-        const { data: chunkData, error: downloadError } = await supabase.storage
-          .from('videos')
-          .download(`temp/${uploadId}/chunk_${i}`)
+      try {
+        // Create a stream to combine chunks without loading everything into memory
+        const chunks: Uint8Array[] = []
+        let totalSize = 0
         
-        if (downloadError) {
-          console.error(`Error downloading chunk ${i}:`, downloadError)
-          throw downloadError
+        for (let i = 0; i < totalChunks; i++) {
+          const chunkFileName = `temp/${uploadId}/chunk_${i.toString().padStart(4, '0')}`
+          const { data: chunkData, error: downloadError } = await supabase.storage
+            .from('videos')
+            .download(chunkFileName)
+          
+          if (downloadError) {
+            console.error(`Error downloading chunk ${i}:`, downloadError)
+            throw new Error(`Failed to download chunk ${i}: ${downloadError.message}`)
+          }
+          
+          const arrayBuffer = await chunkData.arrayBuffer()
+          const uint8Array = new Uint8Array(arrayBuffer)
+          chunks.push(uint8Array)
+          totalSize += uint8Array.length
+          
+          console.log(`Downloaded chunk ${i + 1}/${totalChunks}, size: ${uint8Array.length} bytes`)
+        }
+
+        console.log(`Total combined size: ${totalSize} bytes`)
+
+        // Create combined array buffer efficiently
+        const combinedArray = new Uint8Array(totalSize)
+        let offset = 0
+        
+        for (const chunk of chunks) {
+          combinedArray.set(chunk, offset)
+          offset += chunk.length
+        }
+
+        // Create blob from combined array
+        const combinedBlob = new Blob([combinedArray])
+        const finalPath = `original/${fileName}`
+
+        console.log(`Uploading final file: ${finalPath}, size: ${totalSize} bytes`)
+
+        const { error: finalUploadError } = await supabase.storage
+          .from('videos')
+          .upload(finalPath, combinedBlob, {
+            cacheControl: '3600',
+            upsert: true
+          })
+
+        if (finalUploadError) {
+          console.error('Final upload error:', finalUploadError)
+          throw new Error(`Failed to upload final file: ${finalUploadError.message}`)
+        }
+
+        // Clean up temporary chunks
+        console.log('Cleaning up temporary chunks...')
+        const chunksToDelete = []
+        for (let i = 0; i < totalChunks; i++) {
+          chunksToDelete.push(`temp/${uploadId}/chunk_${i.toString().padStart(4, '0')}`)
         }
         
-        const arrayBuffer = await chunkData.arrayBuffer()
-        const uint8Array = new Uint8Array(arrayBuffer)
-        chunks.push(uint8Array)
-        totalSize += uint8Array.length
-      }
-
-      // Create combined array buffer
-      const combinedArray = new Uint8Array(totalSize)
-      let offset = 0
-      
-      for (const chunk of chunks) {
-        combinedArray.set(chunk, offset)
-        offset += chunk.length
-      }
-
-      // Create blob from combined array
-      const combinedBlob = new Blob([combinedArray])
-      const finalPath = `original/${fileName}`
-
-      console.log(`Uploading final file: ${finalPath}, size: ${totalSize} bytes`)
-
-      const { error: finalUploadError } = await supabase.storage
-        .from('videos')
-        .upload(finalPath, combinedBlob, {
-          cacheControl: '3600',
-          upsert: true
-        })
-
-      if (finalUploadError) {
-        console.error('Final upload error:', finalUploadError)
-        throw finalUploadError
-      }
-
-      // Clean up temporary chunks
-      console.log('Cleaning up temporary chunks...')
-      for (let i = 0; i < totalChunks; i++) {
-        await supabase.storage
+        const { error: deleteError } = await supabase.storage
           .from('videos')
-          .remove([`temp/${uploadId}/chunk_${i}`])
-      }
-
-      // Get public URL
-      const { data: urlData } = supabase.storage
-        .from('videos')
-        .getPublicUrl(finalPath)
-
-      console.log('Upload completed successfully')
-
-      return new Response(
-        JSON.stringify({ 
-          success: true, 
-          message: 'Upload completed',
-          publicUrl: urlData.publicUrl,
-          path: finalPath
-        }),
-        { 
-          headers: { 
-            ...corsHeaders, 
-            'Content-Type': 'application/json' 
-          } 
+          .remove(chunksToDelete)
+          
+        if (deleteError) {
+          console.warn('Warning: Failed to clean up temporary chunks:', deleteError)
+          // Don't throw here as the main upload succeeded
         }
-      )
+
+        // Get public URL
+        const { data: urlData } = supabase.storage
+          .from('videos')
+          .getPublicUrl(finalPath)
+
+        console.log('Upload completed successfully')
+
+        return new Response(
+          JSON.stringify({ 
+            success: true, 
+            message: 'Upload completed',
+            publicUrl: urlData.publicUrl,
+            path: finalPath
+          }),
+          { 
+            headers: { 
+              ...corsHeaders, 
+              'Content-Type': 'application/json' 
+            } 
+          }
+        )
+      } catch (combineError) {
+        console.error('Error combining chunks:', combineError)
+        throw combineError
+      }
     }
 
     // Return chunk upload success
