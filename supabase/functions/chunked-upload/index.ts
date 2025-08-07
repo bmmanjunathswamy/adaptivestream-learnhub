@@ -7,64 +7,88 @@ const corsHeaders = {
 }
 
 serve(async (req) => {
+  console.log(`${req.method} request received`)
+
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
+    console.log('Handling CORS preflight')
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    // Environment check
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+    
+    console.log('Supabase URL exists:', !!supabaseUrl)
+    console.log('Supabase key exists:', !!supabaseKey)
     
     if (!supabaseUrl || !supabaseKey) {
+      console.error('Missing Supabase environment variables')
       throw new Error('Missing Supabase environment variables')
     }
     
     const supabase = createClient(supabaseUrl, supabaseKey)
+    console.log('Supabase client created')
 
+    // Parse form data
+    console.log('Parsing form data...')
     const formData = await req.formData()
+    
     const chunk = formData.get('chunk') as File
     const chunkIndex = parseInt(formData.get('chunkIndex') as string)
     const totalChunks = parseInt(formData.get('totalChunks') as string)
     const fileName = formData.get('fileName') as string
     const uploadId = formData.get('uploadId') as string
 
-    if (!chunk || !fileName || !uploadId) {
-      throw new Error('Missing required fields')
+    console.log('Form data parsed:', {
+      hasChunk: !!chunk,
+      chunkIndex,
+      totalChunks,
+      fileName,
+      uploadId,
+      chunkSize: chunk?.size
+    })
+
+    if (!chunk || isNaN(chunkIndex) || isNaN(totalChunks) || !fileName || !uploadId) {
+      const error = 'Missing or invalid required fields'
+      console.error(error)
+      throw new Error(error)
     }
 
     console.log(`Processing chunk ${chunkIndex + 1}/${totalChunks} for file ${fileName}`)
 
-    // Store chunk temporarily with smaller chunks to avoid memory issues
-    const chunkPath = `temp/${uploadId}/chunk_${chunkIndex.toString().padStart(4, '0')}`
-    
-    // Convert chunk to ArrayBuffer for better handling
-    const chunkArrayBuffer = await chunk.arrayBuffer()
-    const chunkBlob = new Blob([chunkArrayBuffer])
+    // Store chunk with simple path
+    const chunkPath = `temp/${uploadId}/${chunkIndex}`
+    console.log(`Uploading chunk to: ${chunkPath}`)
     
     const { error: chunkError } = await supabase.storage
       .from('videos')
-      .upload(chunkPath, chunkBlob, {
+      .upload(chunkPath, chunk, {
         cacheControl: '3600',
         upsert: true
       })
 
     if (chunkError) {
       console.error('Chunk upload error:', chunkError)
-      throw new Error(`Failed to upload chunk: ${chunkError.message}`)
+      throw new Error(`Chunk upload failed: ${chunkError.message}`)
     }
+
+    console.log(`Chunk ${chunkIndex + 1}/${totalChunks} uploaded successfully`)
 
     // If this is the last chunk, combine all chunks
     if (chunkIndex === totalChunks - 1) {
-      console.log('Last chunk received, combining chunks...')
+      console.log('Last chunk received, starting file combination...')
       
       try {
-        // Create a stream to combine chunks without loading everything into memory
         const chunks: Uint8Array[] = []
         let totalSize = 0
         
+        // Download all chunks
         for (let i = 0; i < totalChunks; i++) {
-          const chunkFileName = `temp/${uploadId}/chunk_${i.toString().padStart(4, '0')}`
+          const chunkFileName = `temp/${uploadId}/${i}`
+          console.log(`Downloading chunk ${i + 1}/${totalChunks}: ${chunkFileName}`)
+          
           const { data: chunkData, error: downloadError } = await supabase.storage
             .from('videos')
             .download(chunkFileName)
@@ -79,43 +103,44 @@ serve(async (req) => {
           chunks.push(uint8Array)
           totalSize += uint8Array.length
           
-          console.log(`Downloaded chunk ${i + 1}/${totalChunks}, size: ${uint8Array.length} bytes`)
+          console.log(`Chunk ${i + 1} downloaded: ${uint8Array.length} bytes`)
         }
 
-        console.log(`Total combined size: ${totalSize} bytes`)
+        console.log(`All chunks downloaded. Total size: ${totalSize} bytes`)
 
-        // Create combined array buffer efficiently
+        // Combine chunks
         const combinedArray = new Uint8Array(totalSize)
         let offset = 0
         
-        for (const chunk of chunks) {
-          combinedArray.set(chunk, offset)
-          offset += chunk.length
+        for (let i = 0; i < chunks.length; i++) {
+          combinedArray.set(chunks[i], offset)
+          offset += chunks[i].length
+          console.log(`Combined chunk ${i + 1}, offset now: ${offset}`)
         }
 
-        // Create blob from combined array
-        const combinedBlob = new Blob([combinedArray])
+        // Upload final file
         const finalPath = `original/${fileName}`
-
-        console.log(`Uploading final file: ${finalPath}, size: ${totalSize} bytes`)
+        console.log(`Uploading final file: ${finalPath}`)
 
         const { error: finalUploadError } = await supabase.storage
           .from('videos')
-          .upload(finalPath, combinedBlob, {
+          .upload(finalPath, combinedArray, {
             cacheControl: '3600',
             upsert: true
           })
 
         if (finalUploadError) {
           console.error('Final upload error:', finalUploadError)
-          throw new Error(`Failed to upload final file: ${finalUploadError.message}`)
+          throw new Error(`Final upload failed: ${finalUploadError.message}`)
         }
+
+        console.log('Final file uploaded successfully')
 
         // Clean up temporary chunks
         console.log('Cleaning up temporary chunks...')
         const chunksToDelete = []
         for (let i = 0; i < totalChunks; i++) {
-          chunksToDelete.push(`temp/${uploadId}/chunk_${i.toString().padStart(4, '0')}`)
+          chunksToDelete.push(`temp/${uploadId}/${i}`)
         }
         
         const { error: deleteError } = await supabase.storage
@@ -123,8 +148,9 @@ serve(async (req) => {
           .remove(chunksToDelete)
           
         if (deleteError) {
-          console.warn('Warning: Failed to clean up temporary chunks:', deleteError)
-          // Don't throw here as the main upload succeeded
+          console.warn('Warning: Failed to clean up some chunks:', deleteError)
+        } else {
+          console.log('Temporary chunks cleaned up')
         }
 
         // Get public URL
@@ -132,7 +158,7 @@ serve(async (req) => {
           .from('videos')
           .getPublicUrl(finalPath)
 
-        console.log('Upload completed successfully')
+        console.log('Upload process completed successfully')
 
         return new Response(
           JSON.stringify({ 
@@ -149,18 +175,22 @@ serve(async (req) => {
           }
         )
       } catch (combineError) {
-        console.error('Error combining chunks:', combineError)
+        console.error('Error in combination process:', combineError)
         throw combineError
       }
     }
 
-    // Return chunk upload success
+    // Return success for individual chunk
+    const response = {
+      success: true, 
+      message: `Chunk ${chunkIndex + 1}/${totalChunks} uploaded`,
+      chunkIndex
+    }
+    
+    console.log('Returning success response:', response)
+
     return new Response(
-      JSON.stringify({ 
-        success: true, 
-        message: `Chunk ${chunkIndex + 1}/${totalChunks} uploaded`,
-        chunkIndex
-      }),
+      JSON.stringify(response),
       { 
         headers: { 
           ...corsHeaders, 
@@ -170,11 +200,14 @@ serve(async (req) => {
     )
 
   } catch (error) {
-    console.error('Error in chunked upload:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    console.error('Function error:', errorMessage)
+    console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace')
+    
     return new Response(
       JSON.stringify({ 
         error: 'Failed to process upload',
-        details: error.message 
+        details: errorMessage
       }),
       { 
         status: 500,

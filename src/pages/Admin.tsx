@@ -635,47 +635,63 @@ function AdminContent() {
   };
 
   const uploadLargeFile = async (file: File, fileName: string): Promise<string> => {
-    const chunkSize = 5 * 1024 * 1024; // 5MB chunks
-    const totalChunks = Math.ceil(file.size / chunkSize);
-    const uploadId = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    try {
+      // First try direct upload to see if the file size limit issue is resolved
+      console.log('Attempting direct upload first...');
+      return await uploadSmallFile(file, fileName);
+    } catch (directError) {
+      console.log('Direct upload failed, trying chunked upload...', directError);
+      
+      const chunkSize = 5 * 1024 * 1024; // 5MB chunks
+      const totalChunks = Math.ceil(file.size / chunkSize);
+      const uploadId = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-    console.log(`Uploading ${file.name} in ${totalChunks} chunks of ${chunkSize} bytes each`);
+      console.log(`Uploading ${file.name} in ${totalChunks} chunks of ${chunkSize} bytes each`);
 
-    for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
-      const start = chunkIndex * chunkSize;
-      const end = Math.min(start + chunkSize, file.size);
-      const chunk = file.slice(start, end);
+      for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+        const start = chunkIndex * chunkSize;
+        const end = Math.min(start + chunkSize, file.size);
+        const chunk = file.slice(start, end);
 
-      const formData = new FormData();
-      formData.append('chunk', chunk);
-      formData.append('chunkIndex', chunkIndex.toString());
-      formData.append('totalChunks', totalChunks.toString());
-      formData.append('fileName', fileName);
-      formData.append('uploadId', uploadId);
+        const formData = new FormData();
+        formData.append('chunk', chunk);
+        formData.append('chunkIndex', chunkIndex.toString());
+        formData.append('totalChunks', totalChunks.toString());
+        formData.append('fileName', fileName);
+        formData.append('uploadId', uploadId);
 
-      console.log(`Uploading chunk ${chunkIndex + 1}/${totalChunks}`);
+        console.log(`Uploading chunk ${chunkIndex + 1}/${totalChunks}`);
 
-      const { data, error } = await supabase.functions.invoke('chunked-upload', {
-        body: formData
-      });
+        try {
+          const { data, error } = await supabase.functions.invoke('chunked-upload', {
+            body: formData
+          });
 
-      if (error) {
-        console.error(`Error uploading chunk ${chunkIndex}:`, error);
-        throw new Error(`Failed to upload chunk ${chunkIndex + 1}: ${error.message}`);
+          if (error) {
+            console.error(`Error uploading chunk ${chunkIndex}:`, error);
+            throw new Error(`Failed to upload chunk ${chunkIndex + 1}: ${error.message}`);
+          }
+
+          // Update progress based on chunk completion
+          const progressPercent = Math.floor(((chunkIndex + 1) / totalChunks) * 60) + 10;
+          setUploadProgress(progressPercent);
+
+          // If this was the last chunk, return the public URL
+          if (chunkIndex === totalChunks - 1) {
+            console.log('Chunked upload completed successfully');
+            if (!data?.publicUrl) {
+              throw new Error('Upload completed but no public URL returned');
+            }
+            return data.publicUrl;
+          }
+        } catch (chunkError) {
+          console.error(`Chunk ${chunkIndex + 1} upload failed:`, chunkError);
+          throw chunkError;
+        }
       }
 
-      // Update progress based on chunk completion
-      const progressPercent = Math.floor(((chunkIndex + 1) / totalChunks) * 60) + 10;
-      setUploadProgress(progressPercent);
-
-      // If this was the last chunk, return the public URL
-      if (chunkIndex === totalChunks - 1) {
-        console.log('Chunked upload completed successfully');
-        return data.publicUrl;
-      }
+      throw new Error('Upload completed but no URL returned');
     }
-
-    throw new Error('Upload completed but no URL returned');
   };
 
   const deleteVideo = async (videoId: string) => {
