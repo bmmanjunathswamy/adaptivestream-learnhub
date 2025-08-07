@@ -49,8 +49,10 @@ serve(async (req) => {
     if (chunkIndex === totalChunks - 1) {
       console.log('Last chunk received, combining chunks...')
       
-      // Download all chunks
-      const chunks = []
+      // Create a stream to combine chunks without loading everything into memory
+      const chunks: Uint8Array[] = []
+      let totalSize = 0
+      
       for (let i = 0; i < totalChunks; i++) {
         const { data: chunkData, error: downloadError } = await supabase.storage
           .from('videos')
@@ -61,12 +63,26 @@ serve(async (req) => {
           throw downloadError
         }
         
-        chunks.push(chunkData)
+        const arrayBuffer = await chunkData.arrayBuffer()
+        const uint8Array = new Uint8Array(arrayBuffer)
+        chunks.push(uint8Array)
+        totalSize += uint8Array.length
       }
 
-      // Combine chunks into final file
-      const combinedBlob = new Blob(chunks)
+      // Create combined array buffer
+      const combinedArray = new Uint8Array(totalSize)
+      let offset = 0
+      
+      for (const chunk of chunks) {
+        combinedArray.set(chunk, offset)
+        offset += chunk.length
+      }
+
+      // Create blob from combined array
+      const combinedBlob = new Blob([combinedArray])
       const finalPath = `original/${fileName}`
+
+      console.log(`Uploading final file: ${finalPath}, size: ${totalSize} bytes`)
 
       const { error: finalUploadError } = await supabase.storage
         .from('videos')
@@ -81,6 +97,7 @@ serve(async (req) => {
       }
 
       // Clean up temporary chunks
+      console.log('Cleaning up temporary chunks...')
       for (let i = 0; i < totalChunks; i++) {
         await supabase.storage
           .from('videos')
