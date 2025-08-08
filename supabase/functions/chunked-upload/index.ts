@@ -62,11 +62,39 @@ serve(async (req) => {
     const chunkPath = `temp/${uploadId}/${chunkIndex}`
     console.log(`Uploading chunk to: ${chunkPath}`)
     
+    // Create a new blob with the correct MIME type based on fileName
+    const fileExtension = fileName.split('.').pop()?.toLowerCase()
+    let mimeType = 'video/mp4' // default
+    
+    switch (fileExtension) {
+      case 'mp4':
+        mimeType = 'video/mp4'
+        break
+      case 'webm':
+        mimeType = 'video/webm'
+        break
+      case 'ogg':
+        mimeType = 'video/ogg'
+        break
+      case 'avi':
+        mimeType = 'video/x-msvideo'
+        break
+      case 'mov':
+        mimeType = 'video/quicktime'
+        break
+      default:
+        mimeType = 'video/mp4'
+    }
+    
+    // Create a blob with the correct MIME type
+    const chunkBlob = new Blob([chunk], { type: mimeType })
+    
     const { error: chunkError } = await supabase.storage
       .from('videos')
-      .upload(chunkPath, chunk, {
+      .upload(chunkPath, chunkBlob, {
         cacheControl: '3600',
-        upsert: true
+        upsert: true,
+        contentType: mimeType
       })
 
     if (chunkError) {
@@ -118,15 +146,43 @@ serve(async (req) => {
           console.log(`Combined chunk ${i + 1}, offset now: ${offset}`)
         }
 
-        // Upload final file
+        // Upload final file with correct MIME type
         const finalPath = `original/${fileName}`
         console.log(`Uploading final file: ${finalPath}`)
+        
+        // Determine MIME type from file extension
+        const fileExtension = fileName.split('.').pop()?.toLowerCase()
+        let mimeType = 'video/mp4' // default
+        
+        switch (fileExtension) {
+          case 'mp4':
+            mimeType = 'video/mp4'
+            break
+          case 'webm':
+            mimeType = 'video/webm'
+            break
+          case 'ogg':
+            mimeType = 'video/ogg'
+            break
+          case 'avi':
+            mimeType = 'video/x-msvideo'
+            break
+          case 'mov':
+            mimeType = 'video/quicktime'
+            break
+          default:
+            mimeType = 'video/mp4'
+        }
+        
+        // Create final blob with correct MIME type
+        const finalBlob = new Blob([combinedArray], { type: mimeType })
 
         const { error: finalUploadError } = await supabase.storage
           .from('videos')
-          .upload(finalPath, combinedArray, {
+          .upload(finalPath, finalBlob, {
             cacheControl: '3600',
-            upsert: true
+            upsert: true,
+            contentType: mimeType
           })
 
         if (finalUploadError) {
