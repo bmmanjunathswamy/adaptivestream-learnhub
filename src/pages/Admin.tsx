@@ -635,14 +635,18 @@ function AdminContent() {
   };
 
   const uploadLargeFile = async (file: File, fileName: string): Promise<string> => {
-    const chunkSize = 5 * 1024 * 1024; // 5MB chunks
+    const chunkSize = 2 * 1024 * 1024; // Reduced to 2MB chunks for better memory management
     const totalChunks = Math.ceil(file.size / chunkSize);
     const uploadId = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+    console.log(`Starting chunked upload: ${totalChunks} chunks for file ${fileName}`);
 
     for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
       const start = chunkIndex * chunkSize;
       const end = Math.min(start + chunkSize, file.size);
       const chunk = file.slice(start, end);
+
+      console.log(`Uploading chunk ${chunkIndex + 1}/${totalChunks}, size: ${chunk.size} bytes`);
 
       const formData = new FormData();
       formData.append('chunk', chunk);
@@ -651,24 +655,38 @@ function AdminContent() {
       formData.append('fileName', fileName);
       formData.append('uploadId', uploadId);
 
-      const { data, error } = await supabase.functions.invoke('chunked-upload', {
-        body: formData
-      });
+      try {
+        const { data, error } = await supabase.functions.invoke('chunked-upload', {
+          body: formData
+        });
 
-      if (error) {
-        throw new Error(`Failed to upload chunk ${chunkIndex + 1}: ${error.message}`);
-      }
-
-      // Update progress
-      const progressPercent = Math.floor(((chunkIndex + 1) / totalChunks) * 60) + 10;
-      setUploadProgress(progressPercent);
-
-      // If this was the last chunk, return the public URL
-      if (chunkIndex === totalChunks - 1) {
-        if (!data?.publicUrl) {
-          throw new Error('Upload completed but no public URL returned');
+        if (error) {
+          console.error(`Chunk ${chunkIndex + 1} upload error:`, error);
+          throw new Error(`Failed to upload chunk ${chunkIndex + 1}: ${error.message}`);
         }
-        return data.publicUrl;
+
+        if (!data?.success) {
+          console.error(`Chunk ${chunkIndex + 1} failed:`, data);
+          throw new Error(`Failed to upload chunk ${chunkIndex + 1}: ${data?.error || 'Unknown error'}`);
+        }
+
+        console.log(`Chunk ${chunkIndex + 1} uploaded successfully`);
+
+        // Update progress
+        const progressPercent = Math.floor(((chunkIndex + 1) / totalChunks) * 60) + 10;
+        setUploadProgress(progressPercent);
+
+        // If this was the last chunk, return the public URL
+        if (chunkIndex === totalChunks - 1) {
+          if (!data?.publicUrl) {
+            throw new Error('Upload completed but no public URL returned');
+          }
+          console.log('Chunked upload completed successfully:', data.publicUrl);
+          return data.publicUrl;
+        }
+      } catch (chunkError) {
+        console.error(`Error uploading chunk ${chunkIndex + 1}:`, chunkError);
+        throw chunkError;
       }
     }
 

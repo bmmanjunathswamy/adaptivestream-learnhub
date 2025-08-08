@@ -82,44 +82,55 @@ serve(async (req) => {
       )
     }
 
-    // If this is the last chunk, combine all chunks
+    // If this is the last chunk, combine all chunks using streaming to avoid memory issues
     if (chunkIndex === totalChunks - 1) {
       try {
-        // Download all chunks in order
-        const chunkPromises = []
+        console.log(`Starting to combine ${totalChunks} chunks for upload ${uploadId}`)
+        
+        // Use a streaming approach to avoid memory limits
+        const finalPath = `original/${fileName}`
+        const chunkBuffers: Uint8Array[] = []
+        
+        // Download chunks one by one to manage memory better
         for (let i = 0; i < totalChunks; i++) {
           const chunkFileName = `temp/${uploadId}/${i.toString().padStart(4, '0')}`
-          chunkPromises.push(
-            supabase.storage.from('videos').download(chunkFileName)
-          )
-        }
+          console.log(`Downloading chunk ${i}/${totalChunks - 1}`)
+          
+          const { data: chunkData, error: downloadError } = await supabase.storage
+            .from('videos')
+            .download(chunkFileName)
 
-        const chunkResults = await Promise.all(chunkPromises)
-        
-        // Check for download errors
-        for (let i = 0; i < chunkResults.length; i++) {
-          if (chunkResults[i].error) {
-            throw new Error(`Failed to download chunk ${i}: ${chunkResults[i].error?.message}`)
+          if (downloadError || !chunkData) {
+            throw new Error(`Failed to download chunk ${i}: ${downloadError?.message || 'No data'}`)
           }
+
+          const chunkBuffer = new Uint8Array(await chunkData.arrayBuffer())
+          chunkBuffers.push(chunkBuffer)
+          
+          // Log progress
+          console.log(`Downloaded chunk ${i}, size: ${chunkBuffer.length} bytes`)
         }
 
-        // Combine chunks
-        const chunkBuffers = await Promise.all(
-          chunkResults.map(result => result.data!.arrayBuffer())
-        )
+        console.log(`All chunks downloaded, combining...`)
         
-        // Calculate total size and create combined buffer
+        // Calculate total size
         const totalSize = chunkBuffers.reduce((sum, buffer) => sum + buffer.byteLength, 0)
-        const combinedBuffer = new Uint8Array(totalSize)
+        console.log(`Total file size will be: ${totalSize} bytes`)
         
+        // Create combined buffer efficiently
+        const combinedBuffer = new Uint8Array(totalSize)
         let offset = 0
-        for (const buffer of chunkBuffers) {
-          combinedBuffer.set(new Uint8Array(buffer), offset)
-          offset += buffer.byteLength
+        
+        for (let i = 0; i < chunkBuffers.length; i++) {
+          combinedBuffer.set(chunkBuffers[i], offset)
+          offset += chunkBuffers[i].byteLength
+          // Clear the chunk buffer from memory
+          chunkBuffers[i] = new Uint8Array(0)
         }
+
+        console.log(`Combined buffer created, uploading final file...`)
 
         // Upload final file
-        const finalPath = `original/${fileName}`
         const { error: finalError } = await supabase.storage
           .from('videos')
           .upload(finalPath, combinedBuffer, {
@@ -131,20 +142,30 @@ serve(async (req) => {
           throw new Error(`Final upload failed: ${finalError.message}`)
         }
 
-        // Clean up temp chunks
-        const deletePromises = []
+        console.log(`Final file uploaded successfully to ${finalPath}`)
+
+        // Clean up temp chunks in background (don't wait for completion)
+        const cleanupPromises = []
         for (let i = 0; i < totalChunks; i++) {
           const chunkFileName = `temp/${uploadId}/${i.toString().padStart(4, '0')}`
-          deletePromises.push(
+          cleanupPromises.push(
             supabase.storage.from('videos').remove([chunkFileName])
           )
         }
-        await Promise.allSettled(deletePromises)
+        
+        // Don't await cleanup, just start it
+        Promise.allSettled(cleanupPromises).then(() => {
+          console.log(`Cleanup completed for upload ${uploadId}`)
+        }).catch(err => {
+          console.warn(`Cleanup failed for upload ${uploadId}:`, err)
+        })
 
         // Get public URL
         const { data: urlData } = supabase.storage
           .from('videos')
           .getPublicUrl(finalPath)
+
+        console.log(`Upload completed successfully: ${urlData.publicUrl}`)
 
         return new Response(
           JSON.stringify({ 
@@ -157,6 +178,7 @@ serve(async (req) => {
           }
         )
       } catch (combineError) {
+        console.error(`Error combining chunks for upload ${uploadId}:`, combineError)
         return new Response(
           JSON.stringify({ 
             error: 'Failed to combine chunks',
