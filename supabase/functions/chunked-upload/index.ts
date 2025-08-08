@@ -7,32 +7,21 @@ const corsHeaders = {
 }
 
 serve(async (req) => {
-  console.log(`${req.method} request received`)
-
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
-    console.log('Handling CORS preflight')
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    // Environment check
     const supabaseUrl = Deno.env.get('SUPABASE_URL')
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
     
-    console.log('Supabase URL exists:', !!supabaseUrl)
-    console.log('Supabase key exists:', !!supabaseKey)
-    
     if (!supabaseUrl || !supabaseKey) {
-      console.error('Missing Supabase environment variables')
       throw new Error('Missing Supabase environment variables')
     }
     
     const supabase = createClient(supabaseUrl, supabaseKey)
-    console.log('Supabase client created')
 
-    // Parse form data
-    console.log('Parsing form data...')
     const formData = await req.formData()
     
     const chunk = formData.get('chunk') as File
@@ -41,249 +30,166 @@ serve(async (req) => {
     const fileName = formData.get('fileName') as string
     const uploadId = formData.get('uploadId') as string
 
-    console.log('Form data parsed:', {
-      hasChunk: !!chunk,
-      chunkIndex,
-      totalChunks,
-      fileName,
-      uploadId,
-      chunkSize: chunk?.size,
-      chunkType: chunk?.type
-    })
-
     if (!chunk || isNaN(chunkIndex) || isNaN(totalChunks) || !fileName || !uploadId) {
-      const error = 'Missing or invalid required fields'
-      console.error(error, { chunk: !!chunk, chunkIndex, totalChunks, fileName, uploadId })
       return new Response(
         JSON.stringify({ 
-          error: 'Missing required fields',
-          details: error
+          error: 'Invalid request parameters'
         }),
         { 
           status: 400,
-          headers: { 
-            ...corsHeaders, 
-            'Content-Type': 'application/json' 
-          } 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
         }
       )
     }
 
-    console.log(`Processing chunk ${chunkIndex + 1}/${totalChunks} for file ${fileName}`)
-
-    // Store chunk with simple path
-    const chunkPath = `temp/${uploadId}/${chunkIndex}`
-    console.log(`Uploading chunk to: ${chunkPath}`)
-    
-    // Create a new blob with the correct MIME type based on fileName
-    const fileExtension = fileName.split('.').pop()?.toLowerCase()
-    let mimeType = 'video/mp4' // default
-    
-    switch (fileExtension) {
-      case 'mp4':
-        mimeType = 'video/mp4'
-        break
-      case 'webm':
-        mimeType = 'video/webm'
-        break
-      case 'ogg':
-        mimeType = 'video/ogg'
-        break
-      case 'avi':
-        mimeType = 'video/x-msvideo'
-        break
-      case 'mov':
-        mimeType = 'video/quicktime'
-        break
-      default:
-        mimeType = 'video/mp4'
+    // Get MIME type from file extension
+    const getVideoMimeType = (filename: string): string => {
+      const ext = filename.split('.').pop()?.toLowerCase()
+      const mimeTypes: Record<string, string> = {
+        'mp4': 'video/mp4',
+        'webm': 'video/webm',
+        'ogg': 'video/ogg',
+        'avi': 'video/x-msvideo',
+        'mov': 'video/quicktime'
+      }
+      return mimeTypes[ext || ''] || 'video/mp4'
     }
+
+    const videoMimeType = getVideoMimeType(fileName)
     
-    // Create a blob with the correct MIME type
-    const chunkBlob = new Blob([chunk], { type: mimeType })
+    // Convert chunk to proper format
+    const chunkBuffer = await chunk.arrayBuffer()
+    const chunkPath = `temp/${uploadId}/${chunkIndex.toString().padStart(4, '0')}`
     
-    const { error: chunkError } = await supabase.storage
+    // Upload chunk
+    const { error: uploadError } = await supabase.storage
       .from('videos')
-      .upload(chunkPath, chunkBlob, {
-        cacheControl: '3600',
-        upsert: true,
-        contentType: mimeType
+      .upload(chunkPath, chunkBuffer, {
+        contentType: videoMimeType,
+        upsert: true
       })
 
-    if (chunkError) {
-      console.error('Chunk upload error:', chunkError)
-      throw new Error(`Chunk upload failed: ${chunkError.message}`)
+    if (uploadError) {
+      return new Response(
+        JSON.stringify({ 
+          error: 'Failed to upload chunk',
+          details: uploadError.message
+        }),
+        { 
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        }
+      )
     }
-
-    console.log(`Chunk ${chunkIndex + 1}/${totalChunks} uploaded successfully`)
 
     // If this is the last chunk, combine all chunks
     if (chunkIndex === totalChunks - 1) {
-      console.log('Last chunk received, starting file combination...')
-      
       try {
-        const chunks: Uint8Array[] = []
-        let totalSize = 0
-        
-        // Download all chunks
+        // Download all chunks in order
+        const chunkPromises = []
         for (let i = 0; i < totalChunks; i++) {
-          const chunkFileName = `temp/${uploadId}/${i}`
-          console.log(`Downloading chunk ${i + 1}/${totalChunks}: ${chunkFileName}`)
-          
-          const { data: chunkData, error: downloadError } = await supabase.storage
-            .from('videos')
-            .download(chunkFileName)
-          
-          if (downloadError) {
-            console.error(`Error downloading chunk ${i}:`, downloadError)
-            throw new Error(`Failed to download chunk ${i}: ${downloadError.message}`)
-          }
-          
-          const arrayBuffer = await chunkData.arrayBuffer()
-          const uint8Array = new Uint8Array(arrayBuffer)
-          chunks.push(uint8Array)
-          totalSize += uint8Array.length
-          
-          console.log(`Chunk ${i + 1} downloaded: ${uint8Array.length} bytes`)
+          const chunkFileName = `temp/${uploadId}/${i.toString().padStart(4, '0')}`
+          chunkPromises.push(
+            supabase.storage.from('videos').download(chunkFileName)
+          )
         }
 
-        console.log(`All chunks downloaded. Total size: ${totalSize} bytes`)
+        const chunkResults = await Promise.all(chunkPromises)
+        
+        // Check for download errors
+        for (let i = 0; i < chunkResults.length; i++) {
+          if (chunkResults[i].error) {
+            throw new Error(`Failed to download chunk ${i}: ${chunkResults[i].error?.message}`)
+          }
+        }
 
         // Combine chunks
-        const combinedArray = new Uint8Array(totalSize)
+        const chunkBuffers = await Promise.all(
+          chunkResults.map(result => result.data!.arrayBuffer())
+        )
+        
+        // Calculate total size and create combined buffer
+        const totalSize = chunkBuffers.reduce((sum, buffer) => sum + buffer.byteLength, 0)
+        const combinedBuffer = new Uint8Array(totalSize)
+        
         let offset = 0
-        
-        for (let i = 0; i < chunks.length; i++) {
-          combinedArray.set(chunks[i], offset)
-          offset += chunks[i].length
-          console.log(`Combined chunk ${i + 1}, offset now: ${offset}`)
+        for (const buffer of chunkBuffers) {
+          combinedBuffer.set(new Uint8Array(buffer), offset)
+          offset += buffer.byteLength
         }
 
-        // Upload final file with correct MIME type
+        // Upload final file
         const finalPath = `original/${fileName}`
-        console.log(`Uploading final file: ${finalPath}`)
-        
-        // Determine MIME type from file extension
-        const fileExtension = fileName.split('.').pop()?.toLowerCase()
-        let mimeType = 'video/mp4' // default
-        
-        switch (fileExtension) {
-          case 'mp4':
-            mimeType = 'video/mp4'
-            break
-          case 'webm':
-            mimeType = 'video/webm'
-            break
-          case 'ogg':
-            mimeType = 'video/ogg'
-            break
-          case 'avi':
-            mimeType = 'video/x-msvideo'
-            break
-          case 'mov':
-            mimeType = 'video/quicktime'
-            break
-          default:
-            mimeType = 'video/mp4'
-        }
-        
-        // Create final blob with correct MIME type
-        const finalBlob = new Blob([combinedArray], { type: mimeType })
-
-        const { error: finalUploadError } = await supabase.storage
+        const { error: finalError } = await supabase.storage
           .from('videos')
-          .upload(finalPath, finalBlob, {
-            cacheControl: '3600',
-            upsert: true,
-            contentType: mimeType
+          .upload(finalPath, combinedBuffer, {
+            contentType: videoMimeType,
+            upsert: true
           })
 
-        if (finalUploadError) {
-          console.error('Final upload error:', finalUploadError)
-          throw new Error(`Final upload failed: ${finalUploadError.message}`)
+        if (finalError) {
+          throw new Error(`Final upload failed: ${finalError.message}`)
         }
 
-        console.log('Final file uploaded successfully')
-
-        // Clean up temporary chunks
-        console.log('Cleaning up temporary chunks...')
-        const chunksToDelete = []
+        // Clean up temp chunks
+        const deletePromises = []
         for (let i = 0; i < totalChunks; i++) {
-          chunksToDelete.push(`temp/${uploadId}/${i}`)
+          const chunkFileName = `temp/${uploadId}/${i.toString().padStart(4, '0')}`
+          deletePromises.push(
+            supabase.storage.from('videos').remove([chunkFileName])
+          )
         }
-        
-        const { error: deleteError } = await supabase.storage
-          .from('videos')
-          .remove(chunksToDelete)
-          
-        if (deleteError) {
-          console.warn('Warning: Failed to clean up some chunks:', deleteError)
-        } else {
-          console.log('Temporary chunks cleaned up')
-        }
+        await Promise.allSettled(deletePromises)
 
         // Get public URL
         const { data: urlData } = supabase.storage
           .from('videos')
           .getPublicUrl(finalPath)
 
-        console.log('Upload process completed successfully')
-
         return new Response(
           JSON.stringify({ 
-            success: true, 
-            message: 'Upload completed',
+            success: true,
             publicUrl: urlData.publicUrl,
             path: finalPath
           }),
           { 
-            headers: { 
-              ...corsHeaders, 
-              'Content-Type': 'application/json' 
-            } 
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
           }
         )
       } catch (combineError) {
-        console.error('Error in combination process:', combineError)
-        throw combineError
+        return new Response(
+          JSON.stringify({ 
+            error: 'Failed to combine chunks',
+            details: combineError instanceof Error ? combineError.message : 'Unknown error'
+          }),
+          { 
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+          }
+        )
       }
     }
 
     // Return success for individual chunk
-    const response = {
-      success: true, 
-      message: `Chunk ${chunkIndex + 1}/${totalChunks} uploaded`,
-      chunkIndex
-    }
-    
-    console.log('Returning success response:', response)
-
     return new Response(
-      JSON.stringify(response),
+      JSON.stringify({
+        success: true,
+        chunkIndex
+      }),
       { 
-        headers: { 
-          ...corsHeaders, 
-          'Content-Type': 'application/json' 
-        } 
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
       }
     )
 
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-    console.error('Function error:', errorMessage)
-    console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace')
-    
     return new Response(
       JSON.stringify({ 
-        error: 'Failed to process upload',
-        details: errorMessage
+        error: 'Server error',
+        details: error instanceof Error ? error.message : 'Unknown error'
       }),
       { 
         status: 500,
-        headers: { 
-          ...corsHeaders, 
-          'Content-Type': 'application/json' 
-        } 
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
       }
     )
   }
