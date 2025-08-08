@@ -672,6 +672,8 @@ function AdminContent() {
             throw new Error(`Failed to upload chunk ${chunkIndex + 1}: ${error.message}`);
           }
 
+          console.log(`Chunk ${chunkIndex + 1} response:`, data);
+
           // Update progress based on chunk completion
           const progressPercent = Math.floor(((chunkIndex + 1) / totalChunks) * 60) + 10;
           setUploadProgress(progressPercent);
@@ -686,6 +688,16 @@ function AdminContent() {
           }
         } catch (chunkError) {
           console.error(`Chunk ${chunkIndex + 1} upload failed:`, chunkError);
+          
+          // Add more specific error handling
+          if (chunkError instanceof Error) {
+            if (chunkError.message.includes('non-2xx status code')) {
+              throw new Error(`Server error uploading chunk ${chunkIndex + 1}. Please try again.`);
+            } else if (chunkError.message.includes('network')) {
+              throw new Error(`Network error uploading chunk ${chunkIndex + 1}. Check your connection.`);
+            }
+          }
+          
           throw chunkError;
         }
       }

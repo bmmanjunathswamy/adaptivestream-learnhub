@@ -47,13 +47,26 @@ serve(async (req) => {
       totalChunks,
       fileName,
       uploadId,
-      chunkSize: chunk?.size
+      chunkSize: chunk?.size,
+      chunkType: chunk?.type
     })
 
     if (!chunk || isNaN(chunkIndex) || isNaN(totalChunks) || !fileName || !uploadId) {
       const error = 'Missing or invalid required fields'
-      console.error(error)
-      throw new Error(error)
+      console.error(error, { chunk: !!chunk, chunkIndex, totalChunks, fileName, uploadId })
+      return new Response(
+        JSON.stringify({ 
+          error: 'Missing required fields',
+          details: error
+        }),
+        { 
+          status: 400,
+          headers: { 
+            ...corsHeaders, 
+            'Content-Type': 'application/json' 
+          } 
+        }
+      )
     }
 
     console.log(`Processing chunk ${chunkIndex + 1}/${totalChunks} for file ${fileName}`)
