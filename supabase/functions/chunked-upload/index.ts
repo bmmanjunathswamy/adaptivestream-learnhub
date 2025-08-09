@@ -82,58 +82,104 @@ serve(async (req) => {
       )
     }
 
-    // If this is the last chunk, combine all chunks using streaming to avoid memory issues
+    // If this is the last chunk, combine all chunks using true streaming to avoid memory issues
     if (chunkIndex === totalChunks - 1) {
       try {
         console.log(`Starting to combine ${totalChunks} chunks for upload ${uploadId}`)
         
-        // Use a streaming approach to avoid memory limits
         const finalPath = `original/${fileName}`
-        const chunkBuffers: Uint8Array[] = []
         
-        // Download chunks one by one to manage memory better
+        // Create a streaming upload by processing chunks in smaller batches
+        const BATCH_SIZE = 5 // Process 5 chunks at a time to manage memory
+        const tempChunkPaths: string[] = []
+        
+        // First, verify all chunks exist
         for (let i = 0; i < totalChunks; i++) {
-          const chunkFileName = `temp/${uploadId}/${i.toString().padStart(4, '0')}`
-          console.log(`Downloading chunk ${i}/${totalChunks - 1}`)
+          tempChunkPaths.push(`temp/${uploadId}/${i.toString().padStart(4, '0')}`)
+        }
+        
+        // Process chunks in batches and create intermediate files
+        const intermediatePaths: string[] = []
+        
+        for (let batchStart = 0; batchStart < totalChunks; batchStart += BATCH_SIZE) {
+          const batchEnd = Math.min(batchStart + BATCH_SIZE, totalChunks)
+          const batchChunks: Uint8Array[] = []
           
-          const { data: chunkData, error: downloadError } = await supabase.storage
-            .from('videos')
-            .download(chunkFileName)
+          console.log(`Processing batch ${Math.floor(batchStart / BATCH_SIZE) + 1}/${Math.ceil(totalChunks / BATCH_SIZE)}`)
+          
+          // Download and combine chunks in current batch
+          for (let i = batchStart; i < batchEnd; i++) {
+            const { data: chunkData, error: downloadError } = await supabase.storage
+              .from('videos')
+              .download(tempChunkPaths[i])
 
-          if (downloadError || !chunkData) {
-            throw new Error(`Failed to download chunk ${i}: ${downloadError?.message || 'No data'}`)
+            if (downloadError || !chunkData) {
+              throw new Error(`Failed to download chunk ${i}: ${downloadError?.message || 'No data'}`)
+            }
+
+            const chunkBuffer = new Uint8Array(await chunkData.arrayBuffer())
+            batchChunks.push(chunkBuffer)
           }
-
-          const chunkBuffer = new Uint8Array(await chunkData.arrayBuffer())
-          chunkBuffers.push(chunkBuffer)
           
-          // Log progress
-          console.log(`Downloaded chunk ${i}, size: ${chunkBuffer.length} bytes`)
+          // Combine batch chunks
+          const batchSize = batchChunks.reduce((sum, buffer) => sum + buffer.byteLength, 0)
+          const batchBuffer = new Uint8Array(batchSize)
+          let offset = 0
+          
+          for (const chunk of batchChunks) {
+            batchBuffer.set(chunk, offset)
+            offset += chunk.byteLength
+          }
+          
+          // Upload intermediate batch file
+          const intermediatePath = `temp/${uploadId}/batch_${Math.floor(batchStart / BATCH_SIZE)}`
+          const { error: batchError } = await supabase.storage
+            .from('videos')
+            .upload(intermediatePath, batchBuffer, {
+              contentType: 'application/octet-stream',
+              upsert: true
+            })
+            
+          if (batchError) {
+            throw new Error(`Failed to upload batch: ${batchError.message}`)
+          }
+          
+          intermediatePaths.push(intermediatePath)
+          console.log(`Batch ${Math.floor(batchStart / BATCH_SIZE) + 1} uploaded, size: ${batchSize} bytes`)
         }
-
-        console.log(`All chunks downloaded, combining...`)
         
-        // Calculate total size
-        const totalSize = chunkBuffers.reduce((sum, buffer) => sum + buffer.byteLength, 0)
-        console.log(`Total file size will be: ${totalSize} bytes`)
+        // Now combine all intermediate files into final file
+        console.log(`Combining ${intermediatePaths.length} intermediate files...`)
         
-        // Create combined buffer efficiently
-        const combinedBuffer = new Uint8Array(totalSize)
-        let offset = 0
-        
-        for (let i = 0; i < chunkBuffers.length; i++) {
-          combinedBuffer.set(chunkBuffers[i], offset)
-          offset += chunkBuffers[i].byteLength
-          // Clear the chunk buffer from memory
-          chunkBuffers[i] = new Uint8Array(0)
+        const finalChunks: Uint8Array[] = []
+        for (const intermediatePath of intermediatePaths) {
+          const { data: intermediateData, error: downloadError } = await supabase.storage
+            .from('videos')
+            .download(intermediatePath)
+            
+          if (downloadError || !intermediateData) {
+            throw new Error(`Failed to download intermediate file: ${downloadError?.message || 'No data'}`)
+          }
+          
+          finalChunks.push(new Uint8Array(await intermediateData.arrayBuffer()))
         }
-
-        console.log(`Combined buffer created, uploading final file...`)
+        
+        // Create final buffer
+        const totalSize = finalChunks.reduce((sum, buffer) => sum + buffer.byteLength, 0)
+        const finalBuffer = new Uint8Array(totalSize)
+        let finalOffset = 0
+        
+        for (const chunk of finalChunks) {
+          finalBuffer.set(chunk, finalOffset)
+          finalOffset += chunk.byteLength
+        }
+        
+        console.log(`Final buffer created, size: ${totalSize} bytes. Uploading...`)
 
         // Upload final file
         const { error: finalError } = await supabase.storage
           .from('videos')
-          .upload(finalPath, combinedBuffer, {
+          .upload(finalPath, finalBuffer, {
             contentType: videoMimeType,
             upsert: true
           })
@@ -144,12 +190,21 @@ serve(async (req) => {
 
         console.log(`Final file uploaded successfully to ${finalPath}`)
 
-        // Clean up temp chunks in background (don't wait for completion)
+        // Clean up temp chunks and intermediate files in background
         const cleanupPromises = []
+        
+        // Remove original chunks
         for (let i = 0; i < totalChunks; i++) {
           const chunkFileName = `temp/${uploadId}/${i.toString().padStart(4, '0')}`
           cleanupPromises.push(
             supabase.storage.from('videos').remove([chunkFileName])
+          )
+        }
+        
+        // Remove intermediate batch files
+        for (const intermediatePath of intermediatePaths) {
+          cleanupPromises.push(
+            supabase.storage.from('videos').remove([intermediatePath])
           )
         }
         

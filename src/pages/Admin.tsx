@@ -635,7 +635,7 @@ function AdminContent() {
   };
 
   const uploadLargeFile = async (file: File, fileName: string): Promise<string> => {
-    const chunkSize = 2 * 1024 * 1024; // Reduced to 2MB chunks for better memory management
+    const chunkSize = 1 * 1024 * 1024; // Reduced to 1MB chunks for better memory management
     const totalChunks = Math.ceil(file.size / chunkSize);
     const uploadId = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
